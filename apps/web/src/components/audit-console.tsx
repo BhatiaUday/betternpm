@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, Play, Search, ShieldCheck } from "lucide-react";
 
 type RiskLevel = "low" | "medium" | "high" | "blocked";
@@ -79,6 +79,8 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
   const [version, setVersion] = useState("");
   const [provider, setProvider] = useState<Provider>("anthropic");
   const [target, setTarget] = useState<Target>("npm-install");
+  const [binByVersion, setBinByVersion] = useState<Record<string, boolean>>({});
+  const [targetTouched, setTargetTouched] = useState(false);
   const [apiKey, setApiKey] = useState("");
 
   const [versionStatus, setVersionStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -107,9 +109,12 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
       }
 
       const data = await response.json() as VersionsResponse;
+      const selected = data.latest ?? data.versions[0] ?? "";
       setResolvedName(data.name);
       setVersions(data.versions);
-      setVersion(data.latest ?? data.versions[0] ?? "");
+      setVersion(selected);
+      setTargetTouched(false);
+      setBinByVersion(await loadBinMap(data.name));
       setVersionStatus("idle");
     } catch (caught) {
       setVersionStatus("error");
@@ -178,6 +183,19 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
     }
   }, [endpoint, resolvedName, packageInput, apiKey, target, version, provider]);
 
+  // Identify the command automatically: a package with no bin is a library you can
+  // only `npm install`; one that ships a bin is what you'd `npx`. Manual picks win.
+  useEffect(() => {
+    if (!version) return;
+    const hasBin = binByVersion[version];
+    if (hasBin === undefined) return;
+    setTarget((current) => {
+      if (hasBin === false) return "npm-install";
+      if (!targetTouched) return "npx";
+      return current;
+    });
+  }, [version, binByVersion, targetTouched]);
+
   const busy = auditStatus === "running";
 
   return (
@@ -229,9 +247,22 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
           <div className="field">
             <label>Command</label>
             <div className="segmented" role="group" aria-label="Audit target">
-              <button type="button" className={target === "npm-install" ? "seg active" : "seg"} onClick={() => setTarget("npm-install")}>npm install</button>
-              <button type="button" className={target === "npx" ? "seg active" : "seg"} onClick={() => setTarget("npx")}>npx</button>
+              <button type="button" className={target === "npm-install" ? "seg active" : "seg"} onClick={() => { setTargetTouched(true); setTarget("npm-install"); }}>npm install</button>
+              <button
+                type="button"
+                className={target === "npx" ? "seg active" : "seg"}
+                onClick={() => { setTargetTouched(true); setTarget("npx"); }}
+                disabled={Boolean(version) && binByVersion[version] === false}
+                title={Boolean(version) && binByVersion[version] === false ? "This package ships no executable (bin), so it can only be installed." : undefined}
+              >npx</button>
             </div>
+            {Boolean(version) && binByVersion[version] !== undefined && (
+              <p className="field-hint">
+                {binByVersion[version]
+                  ? "Auto-detected an executable (bin) — defaulting to npx. Switch to npm install to weigh install-script risk instead."
+                  : "Library package (no bin) — npx doesn't apply, so this audits the npm install path."}
+              </p>
+            )}
           </div>
 
           <div className="field">
@@ -372,6 +403,46 @@ function safeDecode(value: string): string {
   } catch {
     return value;
   }
+}
+
+// Reads each published version's `bin` from the npm registry (CORS-enabled) so the
+// console can pick the right command automatically. Returns {} on any failure so the
+// UI gracefully falls back to a manual choice.
+async function loadBinMap(name: string): Promise<Record<string, boolean>> {
+  const path = name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name);
+
+  try {
+    const response = await fetch(`https://registry.npmjs.org/${path}`, {
+      headers: { accept: "application/vnd.npm.install-v1+json" }
+    });
+
+    if (!response.ok) {
+      return {};
+    }
+
+    const doc = await response.json() as { versions?: Record<string, { bin?: unknown }> };
+    const map: Record<string, boolean> = {};
+
+    for (const [value, meta] of Object.entries(doc.versions ?? {})) {
+      map[value] = hasExecutable(meta?.bin);
+    }
+
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+function hasExecutable(bin: unknown): boolean {
+  if (typeof bin === "string") {
+    return bin.trim().length > 0;
+  }
+
+  if (bin && typeof bin === "object") {
+    return Object.keys(bin as Record<string, unknown>).length > 0;
+  }
+
+  return false;
 }
 
 async function pollAudit(
