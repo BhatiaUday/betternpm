@@ -15,8 +15,8 @@ export default function SearchPage() {
         <p className="kicker">npm, but safer</p>
         <h1 className="audit-title">Search npm packages</h1>
         <p className="audit-sub">
-          Search the npm registry, see what&apos;s already been audited, pick a version, and queue an AI security
-          audit with your own Anthropic or OpenAI key. Your key and handle stay in your browser.
+          Search the npm registry or paste an npm link, see what&apos;s already been audited, pick a version, and
+          queue an AI security audit with your own Anthropic or OpenAI key. Your key and handle stay in your browser.
         </p>
       </header>
       <PackageSearch apiUrl={API_URL} />

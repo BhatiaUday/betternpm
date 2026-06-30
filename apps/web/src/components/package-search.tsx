@@ -248,6 +248,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       </div>
       <p className="field-hint search-note">
         Search is free and needs no API key — browse any package and see if it&apos;s been audited.
+        You can also <strong>paste an npm link</strong> (e.g. npmjs.com/package/react) to jump straight to it.
         Add your provider and key below only when you want to <strong>queue an AI audit</strong>.
       </p>
 
