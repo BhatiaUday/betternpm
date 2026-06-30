@@ -122,3 +122,46 @@ function normalizeRepository(repository: NpmVersionMetadata["repository"]): stri
 
   return repository.url;
 }
+
+export interface NpmSearchHit {
+  name: string;
+  version: string;
+  description?: string;
+  date?: string;
+  publisher?: string;
+  links?: { npm?: string; homepage?: string; repository?: string };
+}
+
+interface NpmSearchResponse {
+  objects?: Array<{
+    package?: {
+      name?: string;
+      version?: string;
+      description?: string;
+      date?: string;
+      publisher?: { username?: string };
+      links?: { npm?: string; homepage?: string; repository?: string };
+    };
+  }>;
+}
+
+// Proxies the public npm search API so the web app gets the same results npmjs shows.
+export async function searchNpmRegistry(query: string, size: number): Promise<NpmSearchHit[]> {
+  const data = await fetchJson<NpmSearchResponse>(
+    `${NPM_REGISTRY_BASE_URL}/-/v1/search?text=${encodeURIComponent(query)}&size=${size}`
+  );
+
+  return (data.objects ?? [])
+    .map((object) => {
+      const pkg = object.package ?? {};
+      return {
+        name: pkg.name ?? "",
+        version: pkg.version ?? "",
+        description: pkg.description,
+        date: pkg.date,
+        publisher: pkg.publisher?.username,
+        links: pkg.links
+      } satisfies NpmSearchHit;
+    })
+    .filter((hit) => hit.name.length > 0);
+}

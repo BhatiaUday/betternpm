@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, Play, Search, ShieldCheck } from "lucide-react";
+import { useBrowserSettings, type Provider } from "../lib/browser-settings";
+import { loadBinMap } from "../lib/npm-detect";
 
 type RiskLevel = "low" | "medium" | "high" | "blocked";
 type Severity = RiskLevel | "info";
-type Provider = "anthropic" | "openai";
 type Target = "npm-install" | "npx";
 
 interface FindingEvidence {
@@ -77,11 +78,13 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
   const [resolvedName, setResolvedName] = useState<string>();
   const [versions, setVersions] = useState<string[]>([]);
   const [version, setVersion] = useState("");
-  const [provider, setProvider] = useState<Provider>("anthropic");
+  const { settings, setProvider, setUsername, setKey } = useBrowserSettings();
+  const provider = settings.provider;
+  const apiKey = settings.keys[provider];
+  const username = settings.username;
   const [target, setTarget] = useState<Target>("npm-install");
   const [binByVersion, setBinByVersion] = useState<Record<string, boolean>>({});
   const [targetTouched, setTargetTouched] = useState(false);
-  const [apiKey, setApiKey] = useState("");
 
   const [versionStatus, setVersionStatus] = useState<"idle" | "loading" | "error">("idle");
   const [auditStatus, setAuditStatus] = useState<"idle" | "running" | "error">("idle");
@@ -149,7 +152,8 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
           packageName: name,
           version: version || "latest",
           provider,
-          apiKey: apiKey.trim()
+          apiKey: apiKey.trim(),
+          username: username.trim() || undefined
         })
       });
 
@@ -181,7 +185,7 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
       setProgress(undefined);
       setError(caught instanceof Error ? caught.message : "The audit failed.");
     }
-  }, [endpoint, resolvedName, packageInput, apiKey, target, version, provider]);
+  }, [endpoint, resolvedName, packageInput, apiKey, username, target, version, provider]);
 
   // Identify the command automatically: a package with no bin is a library you can
   // only `npm install`; one that ships a bin is what you'd `npx`. Manual picks win.
@@ -289,7 +293,7 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
               type="password"
               placeholder={provider === "anthropic" ? "sk-ant-…" : "sk-…"}
               value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
+              onChange={(event) => setKey(provider, event.target.value)}
               spellCheck={false}
               autoComplete="off"
             />
@@ -298,6 +302,21 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
             Runs <code>{MODEL_POLICY[provider].model}</code> at <strong>{MODEL_POLICY[provider].thinking}</strong> thinking.
             {" "}Your key is sent over HTTPS only to run this audit and is never stored.
           </p>
+        </div>
+
+        <div className="field">
+          <label htmlFor="audit-username">Leaderboard handle (optional)</label>
+          <input
+            id="audit-username"
+            className="text-input"
+            placeholder="your-handle"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+          <p className="field-hint">Saved in this browser. Set it to appear on the <a href="/leaderboard">leaderboard</a> for audits you run here.</p>
         </div>
 
         <button type="button" className="run-button" onClick={() => void runAudit()} disabled={busy}>
@@ -403,46 +422,6 @@ function safeDecode(value: string): string {
   } catch {
     return value;
   }
-}
-
-// Reads each published version's `bin` from the npm registry (CORS-enabled) so the
-// console can pick the right command automatically. Returns {} on any failure so the
-// UI gracefully falls back to a manual choice.
-async function loadBinMap(name: string): Promise<Record<string, boolean>> {
-  const path = name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name);
-
-  try {
-    const response = await fetch(`https://registry.npmjs.org/${path}`, {
-      headers: { accept: "application/vnd.npm.install-v1+json" }
-    });
-
-    if (!response.ok) {
-      return {};
-    }
-
-    const doc = await response.json() as { versions?: Record<string, { bin?: unknown }> };
-    const map: Record<string, boolean> = {};
-
-    for (const [value, meta] of Object.entries(doc.versions ?? {})) {
-      map[value] = hasExecutable(meta?.bin);
-    }
-
-    return map;
-  } catch {
-    return {};
-  }
-}
-
-function hasExecutable(bin: unknown): boolean {
-  if (typeof bin === "string") {
-    return bin.trim().length > 0;
-  }
-
-  if (bin && typeof bin === "object") {
-    return Object.keys(bin as Record<string, unknown>).length > 0;
-  }
-
-  return false;
 }
 
 async function pollAudit(

@@ -5,6 +5,7 @@ export function SiteHeader() {
     <header className="site-header">
       <Link href="/" className="site-brand">betternpm</Link>
       <nav className="site-nav" aria-label="Primary">
+        <Link href="/search">Search</Link>
         <Link href="/audit">Audit</Link>
         <Link href="/leaderboard">Leaderboard</Link>
         <a href="https://github.com/sponsors/BhatiaUday" rel="noreferrer" target="_blank">Sponsor</a>

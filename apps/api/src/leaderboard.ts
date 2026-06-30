@@ -91,3 +91,50 @@ export async function searchAudits(db: D1Database, query: string, limit: number)
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
+
+export interface PackageAuditStatus {
+  packageName: string;
+  version: string;
+  riskLevel: string;
+  score: number;
+  auditedAt: string;
+}
+
+// Returns the latest audit per package name for a set of names, so search results
+// can show which packages are already audited in a single round-trip.
+export async function readAuditedStatusForPackages(db: D1Database, names: string[]): Promise<Map<string, PackageAuditStatus>> {
+  const map = new Map<string, PackageAuditStatus>();
+  const unique = [...new Set(names.filter((name) => name.length > 0))].slice(0, 50);
+
+  if (unique.length === 0) {
+    return map;
+  }
+
+  const placeholders = unique.map(() => "?").join(", ");
+  const result = await db.prepare(`
+    SELECT package_name, version, risk_level, score, created_at
+    FROM audit_records
+    WHERE package_name IN (${placeholders})
+    ORDER BY created_at DESC
+  `).bind(...unique).all<{
+    package_name: string;
+    version: string;
+    risk_level: string;
+    score: number;
+    created_at: string;
+  }>();
+
+  for (const row of result.results ?? []) {
+    if (!map.has(row.package_name)) {
+      map.set(row.package_name, {
+        packageName: row.package_name,
+        version: row.version,
+        riskLevel: row.risk_level,
+        score: row.score,
+        auditedAt: row.created_at
+      });
+    }
+  }
+
+  return map;
+}

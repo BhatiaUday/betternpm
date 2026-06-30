@@ -6,12 +6,12 @@ import {
   readAuditRequestRecord
 } from "./audit-requests.js";
 import { createAuditId, readAuditRecord, readAuditRecordById, readLatestAuditRecord, readLatestAuditForPackage, writeAuditRecord } from "./audit-records.js";
-import { buildPackageFacts, fetchPackageMetadata, fetchWeeklyDownloads, resolveVersion } from "./npm.js";
+import { buildPackageFacts, fetchPackageMetadata, fetchWeeklyDownloads, resolveVersion, searchNpmRegistry, type NpmSearchHit } from "./npm.js";
 import { queryOsv } from "./osv.js";
 import { defaultModelFor, runProviderAudit } from "./provider-audit.js";
 import { createWorkspace } from "./workspace.js";
 import { estimateCostUsd } from "./pricing.js";
-import { incrementLeaderboard, readLeaderboard, sanitizeUsername, searchAudits } from "./leaderboard.js";
+import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, sanitizeUsername, searchAudits } from "./leaderboard.js";
 import { SCANNER_PROFILE_VERSION, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type OsvVulnerability, type PackageFacts, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
 
 interface AuditQueueMessage {
@@ -138,7 +138,8 @@ export default {
           packageVersions: "/v1/packages/:package/versions",
           packageSummary: "/v1/packages/:package/:version/summary",
           leaderboard: "/v1/leaderboard",
-          search: "/v1/search?q="
+          search: "/v1/search?q=",
+          registrySearch: "/v1/registry-search?q="
         }
       }, 200, request, env);
     }
@@ -187,6 +188,10 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/v1/search") {
       return getSearch(request, env, url);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/registry-search") {
+      return getRegistrySearch(request, env, url);
     }
 
     return json({ error: "Not found" }, 404, request, env);
@@ -586,6 +591,42 @@ async function getSearch(request: Request, env: Env, url: URL): Promise<Response
 
   const limit = clampLimit(url.searchParams.get("limit"), 25, 50);
   const results = await searchAudits(env.DB, query, limit);
+  return json({ query, results }, 200, request, env);
+}
+
+async function getRegistrySearch(request: Request, env: Env, url: URL): Promise<Response> {
+  const query = (url.searchParams.get("q") ?? "").trim();
+
+  if (query.length < 2) {
+    return json({ query, results: [] }, 200, request, env);
+  }
+
+  const limit = clampLimit(url.searchParams.get("limit"), 20, 30);
+  let hits: NpmSearchHit[];
+
+  try {
+    hits = await searchNpmRegistry(query, limit);
+  } catch (error) {
+    return json({ error: "npm registry search is unavailable. Try again shortly.", detail: errorMessage(error) }, 502, request, env);
+  }
+
+  const statuses = await readAuditedStatusForPackages(env.DB, hits.map((hit) => hit.name));
+  const results = hits.map((hit) => {
+    const status = statuses.get(hit.name);
+    return {
+      name: hit.name,
+      version: hit.version,
+      description: hit.description,
+      date: hit.date,
+      publisher: hit.publisher,
+      links: hit.links,
+      audited: Boolean(status),
+      audit: status
+        ? { version: status.version, riskLevel: status.riskLevel, score: status.score, auditedAt: status.auditedAt }
+        : null
+    };
+  });
+
   return json({ query, results }, 200, request, env);
 }
 
