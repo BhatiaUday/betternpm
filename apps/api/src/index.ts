@@ -11,9 +11,9 @@ import { queryOsv } from "./osv.js";
 import { defaultModelFor, runProviderAudit } from "./provider-audit.js";
 import { createWorkspace } from "./workspace.js";
 import { estimateCostUsd } from "./pricing.js";
-import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, sanitizeUsername, searchAudits } from "./leaderboard.js";
-import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, readGithubConfig, readStateCookie, signSession, stateCookie, verifySession } from "./auth.js";
-import { isClaimedLogin, upsertAccount } from "./accounts.js";
+import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, searchAudits } from "./leaderboard.js";
+import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, pollDeviceFlow, readGithubConfig, readStateCookie, signSession, startDeviceFlow, stateCookie, verifySession } from "./auth.js";
+import { upsertAccount } from "./accounts.js";
 import { SCANNER_PROFILE_VERSION, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type OsvVulnerability, type PackageFacts, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
 
 interface AuditQueueMessage {
@@ -151,7 +151,8 @@ export default {
           leaderboard: "/v1/leaderboard",
           search: "/v1/search?q=",
           registrySearch: "/v1/registry-search?q=",
-          githubLogin: "/v1/auth/github/start"
+          githubLogin: "/v1/auth/github/start",
+          cliLogin: "/v1/auth/cli/start"
         }
       }, 200, request, env);
     }
@@ -221,6 +222,14 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/v1/auth/me") {
       return authMe(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/auth/cli/start") {
+      return authCliStart(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/auth/cli/poll") {
+      return authCliPoll(request, env);
     }
 
     return json({ error: "Not found" }, 404, request, env);
@@ -401,17 +410,9 @@ async function createAuditRequest(request: Request, env: Env): Promise<Response>
   }
 
   const session = await resolveSession(request, env, body.sessionToken);
-  let username: string | undefined;
-
-  if (session) {
-    username = session.login;
-  } else {
-    username = sanitizeUsername(body.username);
-
-    if (username && await isClaimedLogin(env.DB, username)) {
-      return json({ error: `The handle "${username}" is claimed by a GitHub user. Sign in with GitHub to use it.` }, 409, request, env);
-    }
-  }
+  // Attribution is GitHub-only: a verified session sets the handle. Any free-text
+  // `username` in the request body is ignored, so handles can't be self-asserted.
+  const username = session?.login;
 
   const requestIp = clientIp(request);
   const model = body.model ?? defaultModelFor(provider);
@@ -688,6 +689,68 @@ function redirectToWebAuth(webAppUrl: string, fragment: string): Response {
 async function authMe(request: Request, env: Env): Promise<Response> {
   const session = await resolveSession(request, env);
   return json({ authenticated: Boolean(session), login: session?.login ?? null }, 200, request, env);
+}
+
+// CLI GitHub login uses the OAuth device flow: the CLI calls /start to get a user
+// code + verification URL, the user authorizes in a browser, and the CLI polls
+// /poll until a signed betternpm session token is issued. Requires "Enable Device
+// Flow" on the GitHub OAuth app.
+async function authCliStart(request: Request, env: Env): Promise<Response> {
+  const config = readGithubConfig(env);
+
+  if (!config) {
+    return json({ error: "GitHub login is not configured on this server." }, 503, request, env);
+  }
+
+  try {
+    const flow = await startDeviceFlow(config);
+    return json({
+      deviceCode: flow.deviceCode,
+      userCode: flow.userCode,
+      verificationUri: flow.verificationUri,
+      interval: flow.interval,
+      expiresIn: flow.expiresIn
+    }, 200, request, env);
+  } catch (error) {
+    return json({ error: errorMessage(error) }, 502, request, env);
+  }
+}
+
+async function authCliPoll(request: Request, env: Env): Promise<Response> {
+  const config = readGithubConfig(env);
+
+  if (!config) {
+    return json({ error: "GitHub login is not configured on this server." }, 503, request, env);
+  }
+
+  const body = await request.json().catch(() => undefined) as { deviceCode?: string } | undefined;
+
+  if (!body?.deviceCode) {
+    return json({ error: "deviceCode is required." }, 400, request, env);
+  }
+
+  const poll = await pollDeviceFlow(config, body.deviceCode);
+
+  if (poll.status === "pending") {
+    return json({ status: "pending" }, 200, request, env);
+  }
+
+  if (poll.status === "slow_down") {
+    return json({ status: "slow_down", interval: poll.interval }, 200, request, env);
+  }
+
+  if (poll.status === "error") {
+    return json({ status: "error", error: poll.error }, 200, request, env);
+  }
+
+  try {
+    const user = await fetchGithubUser(poll.accessToken);
+    await upsertAccount(env.DB, { githubId: user.id, login: user.login, avatarUrl: user.avatarUrl, now: new Date().toISOString() });
+    const token = await signSession(config.sessionSecret, user);
+    return json({ status: "complete", token, login: user.login }, 200, request, env);
+  } catch (error) {
+    return json({ status: "error", error: errorMessage(error) }, 200, request, env);
+  }
 }
 
 async function resolveSession(request: Request, env: Env, bodyToken?: string): Promise<{ login: string } | undefined> {

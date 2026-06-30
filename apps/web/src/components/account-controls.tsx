@@ -13,8 +13,8 @@ function GithubMark({ size = 15 }: { size?: number }) {
 
 // Leaderboard-handle control: when signed in with GitHub it shows the verified
 // handle + sign-out; otherwise a free-text handle plus a "Sign in with GitHub" CTA.
-export function AccountControls({ apiUrl, idPrefix }: { apiUrl: string; idPrefix: string }) {
-  const { settings, setUsername, signOut } = useBrowserSettings();
+export function AccountControls({ apiUrl }: { apiUrl: string }) {
+  const { settings, signOut } = useBrowserSettings();
   const api = apiUrl.replace(/\/$/, "");
 
   if (settings.session) {
@@ -37,20 +37,14 @@ export function AccountControls({ apiUrl, idPrefix }: { apiUrl: string; idPrefix
 
   return (
     <div className="field">
-      <label htmlFor={`${idPrefix}-username`}>Leaderboard handle</label>
-      <input
-        id={`${idPrefix}-username`}
-        className="text-input"
-        placeholder="your-handle (optional)"
-        value={settings.username}
-        onChange={(event) => setUsername(event.target.value)}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-      />
+      <label>Leaderboard handle</label>
       <a className="github-button" href={`${api}/v1/auth/github/start`}>
         <GithubMark size={15} /> Sign in with GitHub to claim your handle
       </a>
+      <p className="field-hint">
+        Audits are credited to your verified GitHub username — handles can&apos;t be set
+        manually. Sign in to appear on the <a href="/leaderboard">leaderboard</a>.
+      </p>
     </div>
   );
 }

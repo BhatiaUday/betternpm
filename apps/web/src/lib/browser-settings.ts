@@ -11,7 +11,6 @@ export interface Session {
 
 export interface BrowserSettings {
   provider: Provider;
-  username: string;
   keys: Record<Provider, string>;
   session?: Session;
 }
@@ -20,7 +19,6 @@ const STORAGE_KEY = "betternpm.settings.v1";
 
 const DEFAULT_SETTINGS: BrowserSettings = {
   provider: "anthropic",
-  username: "",
   keys: { anthropic: "", openai: "" }
 };
 
@@ -53,7 +51,6 @@ function readStorage(): BrowserSettings {
 
     return {
       provider: parsed.provider === "openai" ? "openai" : "anthropic",
-      username: typeof parsed.username === "string" ? parsed.username : "",
       keys: {
         anthropic: typeof parsed.keys?.anthropic === "string" ? parsed.keys.anthropic : "",
         openai: typeof parsed.keys?.openai === "string" ? parsed.keys.openai : ""
@@ -124,10 +121,9 @@ export function useBrowserSettings() {
   }, []);
 
   const setProvider = useCallback((provider: Provider) => setStore({ ...store, provider }), []);
-  const setUsername = useCallback((username: string) => setStore({ ...store, username }), []);
   const setKey = useCallback((provider: Provider, value: string) => setStore({ ...store, keys: { ...store.keys, [provider]: value } }), []);
   const setSession = useCallback((session: Session) => setStore({ ...store, session }), []);
   const signOut = useCallback(() => setStore({ ...store, session: undefined }), []);
 
-  return { settings, setProvider, setUsername, setKey, setSession, signOut };
+  return { settings, setProvider, setKey, setSession, signOut };
 }

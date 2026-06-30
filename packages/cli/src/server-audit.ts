@@ -1,6 +1,6 @@
 import type { PackageInspection } from "betternpm-core";
 import type { BetterNpxConfig } from "./config.js";
-import { getProviderKey } from "./credentials.js";
+import { getProviderKey, getSession } from "./credentials.js";
 
 export type ServerRiskLevel = "low" | "medium" | "high" | "blocked";
 
@@ -71,6 +71,9 @@ export async function runServerAudit(
     return { status: "unavailable", reason: "provider-disabled" };
   }
 
+  // A verified GitHub session attributes the audit to the user's handle (leaderboard).
+  const session = await getSession();
+
   const body = {
     target: options.target ?? "npx",
     packageName: inspection.facts.name,
@@ -78,11 +81,10 @@ export async function runServerAudit(
     integrity: inspection.facts.integrity,
     provider: config.llmProvider,
     model: config.llmModel,
-    username: config.username,
     forceRefresh: options.forceRefresh === true
   };
 
-  const firstResponse = await postAuditRequest(config.auditServerUrl, body);
+  const firstResponse = await postAuditRequest(config.auditServerUrl, body, session?.token);
 
   if (firstResponse.ok) {
     const result = await normalizeQueueResponse(await firstResponse.json() as QueueAuditResponse, config.auditServerUrl);
@@ -113,7 +115,7 @@ export async function runServerAudit(
     }
   }
 
-  const response = await postAuditRequest(config.auditServerUrl, { ...body, apiKey });
+  const response = await postAuditRequest(config.auditServerUrl, { ...body, apiKey }, session?.token);
 
   if (!response.ok) {
     const text = await response.text();
@@ -124,12 +126,18 @@ export async function runServerAudit(
   return { status: "completed", result };
 }
 
-function postAuditRequest(auditServerUrl: string, body: Record<string, unknown>): Promise<Response> {
+function postAuditRequest(auditServerUrl: string, body: Record<string, unknown>, sessionToken?: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json"
+  };
+
+  if (sessionToken) {
+    headers.authorization = `Bearer ${sessionToken}`;
+  }
+
   return fetch(`${auditServerUrl.replace(/\/$/, "")}/v1/audit-requests`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
+    headers,
     body: JSON.stringify(body)
   });
 }

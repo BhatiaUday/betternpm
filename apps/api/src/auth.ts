@@ -139,6 +139,107 @@ export async function fetchGithubUser(accessToken: string): Promise<GithubUser> 
   return { id: data.id, login: data.login, avatarUrl: data.avatar_url };
 }
 
+const GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code";
+
+export interface DeviceFlowStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  interval: number;
+  expiresIn: number;
+}
+
+// Kicks off the OAuth device flow for headless clients (the CLI). Returns a user
+// code the person types at the verification URL. Needs "Enable Device Flow" on the
+// GitHub OAuth app; otherwise GitHub returns an error here.
+export async function startDeviceFlow(config: GithubConfig): Promise<DeviceFlowStart> {
+  const response = await fetch(GITHUB_DEVICE_CODE_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": "betternpm-api"
+    },
+    body: JSON.stringify({ client_id: config.clientId, scope: "read:user" })
+  });
+
+  const data = await response.json().catch(() => ({})) as {
+    device_code?: string;
+    user_code?: string;
+    verification_uri?: string;
+    interval?: number;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+
+  if (!response.ok || !data.device_code || !data.user_code || !data.verification_uri) {
+    const detail = data.error_description ?? data.error;
+
+    if (data.error === "device_flow_disabled" || (detail ?? "").toLowerCase().includes("device flow")) {
+      throw new Error("GitHub Device Flow is not enabled on the OAuth app. Turn on \"Enable Device Flow\" in the OAuth app settings, then retry.");
+    }
+
+    throw new Error(detail ? `GitHub device code request failed: ${detail}` : `GitHub device code request failed (${response.status}).`);
+  }
+
+  return {
+    deviceCode: data.device_code,
+    userCode: data.user_code,
+    verificationUri: data.verification_uri,
+    interval: typeof data.interval === "number" ? data.interval : 5,
+    expiresIn: typeof data.expires_in === "number" ? data.expires_in : 900
+  };
+}
+
+export type DeviceFlowPoll =
+  | { status: "pending" }
+  | { status: "slow_down"; interval: number }
+  | { status: "complete"; accessToken: string }
+  | { status: "error"; error: string };
+
+// Polls GitHub once for the device-flow token. The device flow is a public-client
+// flow, so no client secret is sent here.
+export async function pollDeviceFlow(config: GithubConfig, deviceCode: string): Promise<DeviceFlowPoll> {
+  const response = await fetch(GITHUB_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "user-agent": "betternpm-api"
+    },
+    body: JSON.stringify({
+      client_id: config.clientId,
+      device_code: deviceCode,
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+    })
+  });
+
+  const data = await response.json().catch(() => ({})) as {
+    access_token?: string;
+    error?: string;
+    interval?: number;
+    error_description?: string;
+  };
+
+  if (data.access_token) {
+    return { status: "complete", accessToken: data.access_token };
+  }
+
+  switch (data.error) {
+    case "authorization_pending":
+      return { status: "pending" };
+    case "slow_down":
+      return { status: "slow_down", interval: typeof data.interval === "number" ? data.interval : 10 };
+    case "expired_token":
+      return { status: "error", error: "The login code expired. Run the login command again." };
+    case "access_denied":
+      return { status: "error", error: "Authorization was denied." };
+    default:
+      return { status: "error", error: data.error_description ?? data.error ?? "GitHub device authorization failed." };
+  }
+}
+
 export interface SessionClaims {
   login: string;
   id: number;

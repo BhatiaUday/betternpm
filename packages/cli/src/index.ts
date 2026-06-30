@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import { inspectPackage, type PackageInspection } from "betternpm-core";
 import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { loginWithGithub } from "./github-auth.js";
 import { parseCliArgs } from "./args.js";
 import { readAllowRecord, writeAllowRecord } from "./allow-cache.js";
 import { applyAuditOverrides, readConfig, writeConfig, configPath, type AuditOverrides, type BetterNpxConfig } from "./config.js";
-import { clearProviderKeys, credentialsPath, promptSecret, setProviderKey, type ProviderName } from "./credentials.js";
+import { clearProviderKeys, clearSession, credentialsPath, getProviderKey, getSession, promptSecret, setProviderKey, type ProviderName } from "./credentials.js";
 import { runNpmExec, runNpmPassthrough } from "./exec.js";
 import { parseNpmInstallInspectionPlan, type NpmInstallInspectionPlan } from "./npm-command.js";
 import { estimateAuditCost, formatCostRange } from "./pricing.js";
 import { runServerAudit, type ServerAuditResult, type ServerAuditUnavailableReason } from "./server-audit.js";
-import { confirmAuditCharge, confirmExecution, getBlockingReason, getServerAuditBlockingReason, renderHelp, renderInspection, renderServerAudit, renderStaticOnlyWarning } from "./ui.js";
+import { confirmAuditCharge, confirmExecution, getBlockingReason, getServerAuditBlockingReason, promptLine, renderHelp, renderInspection, renderServerAudit, renderSetupDone, renderSetupIntro, renderStaticOnlyWarning } from "./ui.js";
 
 const CLI_VERSION = "0.0.1";
 
@@ -19,6 +21,16 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   if (argv[0] === "login" || argv[0] === "logout") {
     return handleAuthCommand(argv, await readConfig());
   }
+
+  if (argv[0] === "setup") {
+    return handleSetupCommand(commandName);
+  }
+
+  if (argv[0] === "whoami") {
+    return handleWhoamiCommand();
+  }
+
+  maybeShowFirstRunHint(commandName, argv);
 
   if (isNpmReplacementCommand(commandName) && !isBetterNpmInspectCommand(argv)) {
     const npmInstallPlan = parseNpmInstallInspectionPlan(argv);
@@ -224,12 +236,126 @@ async function handleAuthCommand(argv: string[], config: BetterNpxConfig): Promi
   const command = argv[0];
 
   if (command === "login") {
+    if (argv[1] === "github") {
+      return handleGithubLogin(config);
+    }
+
     return handleLoginCommand(argv[1], config);
   }
 
+  // logout — optional "github" clears only the GitHub session.
+  if (argv[1] === "github") {
+    await clearSession();
+    console.log("Signed out of GitHub on this machine.");
+    return 0;
+  }
+
   await clearProviderKeys();
-  console.log(`Removed saved API keys from ${credentialsPath()}.`);
+  await clearSession();
+  console.log(`Removed saved API keys and GitHub session from ${credentialsPath()}.`);
   return 0;
+}
+
+async function handleGithubLogin(config: BetterNpxConfig): Promise<number> {
+  try {
+    const { login } = await loginWithGithub(config.auditServerUrl);
+    console.log(`\n✓ Signed in as @${login}. Audits you run are now credited to this GitHub handle.`);
+    return 0;
+  } catch (error) {
+    console.error(`\nGitHub login failed: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+}
+
+async function handleWhoamiCommand(): Promise<number> {
+  const session = await getSession();
+
+  if (session) {
+    console.log(`GitHub: signed in as @${session.login}`);
+  } else {
+    console.log("GitHub: not signed in (run `betternpm login github`)");
+  }
+
+  const config = await readConfig();
+
+  if (config.llmProvider === "anthropic" || config.llmProvider === "openai") {
+    const hasKey = Boolean(await getProviderKey(config.llmProvider));
+    console.log("AI provider: " + config.llmProvider + (hasKey ? " (key saved)" : " (no key — run `betternpm login " + config.llmProvider + "`)"));
+  } else {
+    console.log("AI provider: none (static analysis only)");
+  }
+
+  return 0;
+}
+
+async function handleSetupCommand(commandName: string): Promise<number> {
+  console.log(renderSetupIntro());
+
+  if (!process.stdin.isTTY) {
+    console.error("Setup needs an interactive terminal. Re-run `betternpm setup` in a normal shell.");
+    return 1;
+  }
+
+  const config = await readConfig();
+  const next: BetterNpxConfig = { ...config };
+
+  const providerAnswer = (await promptLine("AI provider for audits? [anthropic/openai/none] (none): ")).toLowerCase();
+  const provider: BetterNpxConfig["llmProvider"] = providerAnswer === "anthropic" || providerAnswer === "openai" ? providerAnswer : "none";
+  next.llmProvider = provider;
+
+  if (provider !== "none") {
+    const existingKey = await getProviderKey(provider);
+
+    if (existingKey) {
+      console.log(`A ${provider} API key is already saved.`);
+    } else {
+      const key = await promptSecret(`Paste your ${provider} API key (hidden, Enter to skip): `);
+
+      if (key) {
+        await setProviderKey(provider, key);
+        console.log(`Saved ${provider} key to ${credentialsPath()} (chmod 600).`);
+      } else {
+        console.log(`Skipped — add it later with \`${commandName} login ${provider}\`.`);
+      }
+    }
+  }
+
+  await writeConfig(next);
+
+  const existingSession = await getSession();
+
+  if (existingSession) {
+    console.log(`Already signed in to GitHub as @${existingSession.login}.`);
+  } else {
+    const wantsGithub = (await promptLine("Sign in with GitHub to claim your leaderboard handle? [y/N]: ")).toLowerCase();
+
+    if (wantsGithub === "y" || wantsGithub === "yes") {
+      try {
+        const { login } = await loginWithGithub(next.auditServerUrl);
+        console.log(`✓ Signed in as @${login}.`);
+      } catch (error) {
+        console.error(`GitHub sign-in skipped: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  console.log(renderSetupDone(commandName));
+  return 0;
+}
+
+function maybeShowFirstRunHint(commandName: string, argv: string[]): void {
+  if (!process.stdin.isTTY || existsSync(configPath())) {
+    return;
+  }
+
+  const first = argv[0] ?? "";
+  const skip = first === "config" || argv.includes("--help") || argv.includes("-h") || argv.includes("--version") || argv.includes("-v");
+
+  if (skip) {
+    return;
+  }
+
+  console.error(`Tip: first time? Run \`${commandName} setup\` to configure audits and sign in.\n`);
 }
 
 async function handleLoginCommand(providerArg: string | undefined, config: BetterNpxConfig): Promise<number> {

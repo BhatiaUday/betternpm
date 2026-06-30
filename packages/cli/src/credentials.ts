@@ -6,8 +6,14 @@ import { configDir } from "./config.js";
 
 export type ProviderName = "anthropic" | "openai";
 
+export interface CliSession {
+  token: string;
+  login: string;
+}
+
 export interface Credentials {
   providerKeys: Partial<Record<ProviderName, string>>;
+  session?: CliSession;
 }
 
 export async function readCredentials(): Promise<Credentials> {
@@ -15,7 +21,12 @@ export async function readCredentials(): Promise<Credentials> {
     const raw = await readFile(credentialsPath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<Credentials>;
 
-    return { providerKeys: parsed.providerKeys ?? {} };
+    return {
+      providerKeys: parsed.providerKeys ?? {},
+      session: parsed.session && typeof parsed.session.token === "string" && typeof parsed.session.login === "string"
+        ? { token: parsed.session.token, login: parsed.session.login }
+        : undefined
+    };
   } catch {
     return { providerKeys: {} };
   }
@@ -39,7 +50,23 @@ export async function getProviderKey(provider: ProviderName): Promise<string | u
 }
 
 export async function clearProviderKeys(): Promise<void> {
-  await writeCredentials({ providerKeys: {} });
+  const credentials = await readCredentials();
+  await writeCredentials({ ...credentials, providerKeys: {} });
+}
+
+export async function setSession(session: CliSession): Promise<void> {
+  const credentials = await readCredentials();
+  await writeCredentials({ ...credentials, session });
+}
+
+export async function getSession(): Promise<CliSession | undefined> {
+  const credentials = await readCredentials();
+  return credentials.session;
+}
+
+export async function clearSession(): Promise<void> {
+  const credentials = await readCredentials();
+  await writeCredentials({ ...credentials, session: undefined });
 }
 
 export function credentialsPath(): string {

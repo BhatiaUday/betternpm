@@ -134,6 +134,21 @@ export async function confirmExecution(): Promise<boolean> {
   }
 }
 
+/** Ask a free-text question on an interactive terminal; returns "" when non-TTY. */
+export async function promptLine(question: string): Promise<string> {
+  if (!input.isTTY) {
+    return "";
+  }
+
+  const readline = createInterface({ input, output });
+
+  try {
+    return (await readline.question(question)).trim();
+  } finally {
+    readline.close();
+  }
+}
+
 export async function confirmAuditCharge(
   estimate: AuditCostEstimate | undefined,
   provider: string,
@@ -162,11 +177,14 @@ export function renderHelp(version: string, commandName = "betternpx"): string {
   return `${commandName} ${version}
 
 Usage:
+  ${commandName} setup
   ${commandName} inspect [options] <package>
   ${commandName} [options] <package> [...args]
   ${commandName} --package <package> -- <command> [...args]
+  ${commandName} login github
   ${commandName} login [anthropic|openai]
-  ${commandName} logout
+  ${commandName} logout [github]
+  ${commandName} whoami
 
 Options:
   --json             Print inspection JSON and exit without executing
@@ -182,25 +200,53 @@ Options:
   --api-key <key>    Pass a BYOK API key inline (prefer --api-key-env or login)
   --max-cost <usd>   Skip the AI audit if the estimated BYOK cost exceeds this cap
   --package, -p      Package to install for npm exec delegation
-  login              Save an Anthropic/OpenAI API key locally for BYOK audits
-  logout             Remove saved API keys
-  config             Show Better npx config
-  config set k v     Set config values
   --help, -h         Show this help
   --version, -v      Show the CLI version
 
+Commands:
+  setup              First-time guided setup (provider, BYOK key, GitHub sign-in)
+  login github       Sign in with GitHub so audits are credited to your handle
+  login <provider>   Save an Anthropic/OpenAI API key locally for BYOK audits
+  logout [github]    Remove saved API keys (add 'github' to clear only the session)
+  whoami             Show your GitHub sign-in and AI provider status
+  inspect <package>  Inspect a package without running it
+  config             Show Better npx config
+  config set k v     Set config values
+
 Examples:
+  ${commandName} setup
   ${commandName} inspect create-next-app
   ${commandName} create-next-app my-app
-  ${commandName} --force-fresh-audit inspect create-next-app
-  ${commandName} --force-install suspicious-cli
-  ${commandName} --package typescript -- tsc --version
+  ${commandName} login github
   ${commandName} login anthropic
-  ${commandName} config set minimumVersionAgeHours 168
+  ${commandName} whoami
+  ${commandName} --force-fresh-audit inspect create-next-app
+  ${commandName} --package typescript -- tsc --version
   ${commandName} config set llmProvider anthropic
   ${commandName} config set llmModel claude-sonnet-4-6
-  ${commandName} config set username your-handle
   ${commandName} config set apiKeyEnv ANTHROPIC_API_KEY`;
+}
+
+export function renderSetupIntro(): string {
+  return [
+    "",
+    "betternpm setup",
+    "Configure betternpm: pick an AI provider, optionally save a BYOK key, and sign in with GitHub.",
+    "Everything is stored locally under ~/.config/betternpm. Press Enter to accept the default.",
+    ""
+  ].join("\n");
+}
+
+export function renderSetupDone(commandName = "betternpm"): string {
+  return [
+    "",
+    "Setup complete. Try:",
+    `  ${commandName} inspect left-pad     inspect a package without running it`,
+    `  betternpx cowsay              inspect, then run`,
+    `  ${commandName} whoami              show your sign-in + provider`,
+    `  ${commandName} --help              all commands`,
+    ""
+  ].join("\n");
 }
 
 function formatDownloads(downloads: number | undefined): string {

@@ -886,10 +886,33 @@ h1 {
 }
 
 .queue-result {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.queue-result-head {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.queue-engine {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+
+.queue-summary {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.queue-meta {
+  color: var(--muted);
+  font-size: 13px;
   margin: 0;
 }
 

@@ -91,9 +91,9 @@ export default function LeaderboardPage() {
         <p className="kicker">community audits</p>
         <h1 className="audit-title">Leaderboard</h1>
         <p className="audit-sub">
-          Top contributors by estimated audit spend. Set your handle on the{" "}
-          <a href="/search">search</a> page (saved in your browser), or in the CLI
-          (<code>betternpm config set username your-handle</code>), then run an audit to appear here.
+          Top contributors by estimated audit spend. Sign in with GitHub on the{" "}
+          <a href="/search">search</a> page, or run <code>betternpm login github</code> in the
+          CLI, then run an audit to appear here.
         </p>
       </header>
 

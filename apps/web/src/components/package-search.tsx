@@ -20,8 +20,30 @@ interface RegistryResult {
 }
 
 interface AuditRecordLite {
-  identity: { packageName: string; version: string };
-  risk: { level: RiskLevel; score: number };
+  identity: { packageName: string; version: string; provider: string; model: string };
+  risk: { level: RiskLevel; score: number; summary?: string; findings: Array<{ severity: string; title: string }> };
+}
+
+interface QueueResult {
+  version: string;
+  level: RiskLevel;
+  score: number;
+  provider: string;
+  model: string;
+  summary?: string;
+  findings: number;
+}
+
+function toQueueResult(audit: AuditRecordLite): QueueResult {
+  return {
+    version: audit.identity.version,
+    level: audit.risk.level,
+    score: audit.risk.score,
+    provider: audit.identity.provider,
+    model: audit.identity.model,
+    summary: audit.risk.summary,
+    findings: audit.risk.findings?.length ?? 0
+  };
 }
 
 const MODEL_POLICY: Record<Provider, { model: string; thinking: string }> = {
@@ -49,7 +71,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const [queueStatus, setQueueStatus] = useState<"idle" | "loading" | "running" | "error">("idle");
   const [progress, setProgress] = useState<string>();
   const [queueError, setQueueError] = useState<string>();
-  const [queueResult, setQueueResult] = useState<{ version: string; level: RiskLevel; score: number }>();
+  const [queueResult, setQueueResult] = useState<QueueResult>();
 
   const runSearch = useCallback(async (override?: string) => {
     const raw = (override ?? query).trim();
@@ -162,8 +184,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
           packageName: selected,
           version: version || "latest",
           provider: settings.provider,
-          apiKey: apiKey.trim(),
-          username: settings.session ? undefined : (settings.username.trim() || undefined)
+          apiKey: apiKey.trim()
         })
       });
 
@@ -179,7 +200,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       }
 
       if (data.cached && data.audit) {
-        setQueueResult({ version: data.audit.identity.version, level: data.audit.risk.level, score: data.audit.risk.score });
+        setQueueResult(toQueueResult(data.audit));
         setQueueStatus("idle");
         setProgress(undefined);
         return;
@@ -191,7 +212,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
 
       setQueueStatus("running");
       const audit = await pollRequest(endpoint, data.request.id, setProgress);
-      setQueueResult({ version: audit.identity.version, level: audit.risk.level, score: audit.risk.score });
+      setQueueResult(toQueueResult(audit));
       setQueueStatus("idle");
       setProgress(undefined);
     } catch (caught) {
@@ -199,7 +220,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       setProgress(undefined);
       setQueueError(caught instanceof Error ? caught.message : "The audit failed.");
     }
-  }, [endpoint, selected, version, binByVersion, apiKey, settings.provider, settings.username, settings.session]);
+  }, [endpoint, selected, version, binByVersion, apiKey, settings.provider, settings.session]);
 
   const busy = queueStatus === "loading" || queueStatus === "running";
 
@@ -248,7 +269,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
                 <option value="openai">OpenAI (GPT)</option>
               </select>
             </div>
-            <AccountControls apiUrl={endpoint} idPrefix="ps" />
+            <AccountControls apiUrl={endpoint} />
             <div className="field">
               <label htmlFor="ps-key">{settings.provider === "anthropic" ? "Anthropic" : "OpenAI"} API key</label>
               <div className="input-row">
@@ -349,11 +370,19 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
 
                 {queueError && <p className="error-line" role="alert">{queueError}</p>}
                 {queueResult && (
-                  <p className="queue-result">
-                    <ShieldCheck size={16} aria-hidden="true" />
-                    <span className={`risk-badge risk-${queueResult.level}`}>{queueResult.level} {queueResult.score}</span>
-                    <a href={`/p/${result.name}/${queueResult.version}`}>view full audit</a>
-                  </p>
+                  <div className="queue-result">
+                    <div className="queue-result-head">
+                      <ShieldCheck size={16} aria-hidden="true" />
+                      <span className={`risk-badge risk-${queueResult.level}`}>{queueResult.level} {queueResult.score}</span>
+                      <span className="queue-engine">{queueResult.provider} · {queueResult.model}</span>
+                    </div>
+                    {queueResult.summary && <p className="queue-summary">{queueResult.summary}</p>}
+                    <p className="queue-meta">
+                      {queueResult.findings} {queueResult.findings === 1 ? "finding" : "findings"}
+                      {" · "}
+                      <a href={`/p/${result.name}/${queueResult.version}`}>view full audit →</a>
+                    </p>
+                  </div>
                 )}
               </div>
             )}
