@@ -8,8 +8,7 @@ routes = [{ pattern = "api.betternpm.org", custom_domain = true }]
 [vars]
 WEB_APP_URL = "https://www.betternpm.org"
 API_BASE_URL = "https://api.betternpm.org"
-# GITHUB_CLIENT_ID is public — set it here after creating the GitHub OAuth App:
-# GITHUB_CLIENT_ID = "Iv1.xxxxxxxxxxxx"
+GITHUB_CLIENT_ID = "Ov23liwD7QmH0z7nY5aM"
 #
 # Secrets (set via `wrangler secret put <NAME>`, never commit them):
 #   GITHUB_CLIENT_SECRET    — the GitHub OAuth App client secret
