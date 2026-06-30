@@ -2,7 +2,7 @@
 
 Living checklist toward a basic public launch. Owned by the agent; updated as work lands.
 
-_Last updated: 2026-06-30 (CLI published to npm; launch day)._
+_Last updated: 2026-06-30 (CLI on npm; API + web redeployed; source open-sourced — launch day)._
 
 ## ✅ Done (shipped / deployed)
 - **AI audit engine** — agentic tarball exploration (`list_files`/`read_file`/`search_code`/`submit_audit`) for `npm install` + `npx`, cached in D1. Deployed.
@@ -33,16 +33,16 @@ _Last updated: 2026-06-30 (CLI published to npm; launch day)._
 - [x] **API rate limiting** — Cloudflare `[[ratelimits]]` bindings (general 120/min, audit-create 20/min), fail-open, keyed by IP + collapsed route. Validated with `wrangler deploy --dry-run`.
 - [x] **Web per-package permalink** — `/p/<name>[/<version>]` renders the latest cached audit (new API `GET /v1/packages/:name/:version/audit`); leaderboard search results now deep-link to it.
 - Validation: core 37 + CLI 19 tests green; full workspace typecheck clean; API typecheck + wrangler dry-run clean; web typecheck clean. `SCANNER_PROFILE_VERSION` bumped to `local-heuristics-v9`.
-- ⚠️ Redeploy needed for the API (new endpoint + rate limits) and web (permalink) to go live.
+- ✅ **API + web redeployed (2026-06-30)** — API live at `api.betternpm.org` (new `GET /v1/packages/:name/:version/audit` returns 200; rate limiters `API_RATE_LIMITER 120/60s` + `AUDIT_RATE_LIMITER 20/60s` active). Web live at `www.betternpm.org` (homepage flipped to the live install command + title/OG metadata updated; `/p/<pkg>` permalink serving 200).
 
 
 ## 🔴 Blocked on you (cannot do autonomously)
 - [ ] **Funded audit run** — no credits on Anthropic/OpenAI, so the model's verdict quality is unverified. Pipeline + failure path already confirmed with a bad key; flooring covers dangerous packages regardless. Verify quality on first funded run.
-- [x] **Publish the CLI — DONE (2026-06-30)** — published to npm: **`betternpm-cli@0.0.1`** + **`betternpm-core@0.0.1`** (public access). Verified end-to-end: a clean `npm i betternpm-cli` in a fresh temp dir pulls both from the registry, installs all four bins (`betternpm`/`bnpm`/`betternpx`/`bnpx`), and `betternpx --help` runs the inspector. **Naming note:** used unscoped names because the `@betternpm` scope has no npm org and `betternpm`/`bnpm`/`bnpx` are already taken by other maintainers (`betternpm-core`/`betternpm-cli` were free). To adopt scoped `@betternpm/*` later: create a free `betternpm` org at npmjs.com/org/create, restore the scoped names, then re-run `npm run publish:alpha`. The `curl betternpm.org/latest | sh` installer still needs the code on GitHub `main` (workspace is not yet a git repo) — that's a separate, optional distribution path now that npm install works.
+- [x] **Publish the CLI — DONE (2026-06-30)** — published to npm: **`betternpm-cli@0.0.1`** + **`betternpm-core@0.0.1`** (public access). Verified end-to-end: a clean `npm i betternpm-cli` in a fresh temp dir pulls both from the registry, installs all four bins (`betternpm`/`bnpm`/`betternpx`/`bnpx`), and `betternpx --help` runs the inspector. **Naming note:** used unscoped names because the `@betternpm` scope has no npm org and `betternpm`/`bnpm`/`bnpx` are already taken by other maintainers (`betternpm-core`/`betternpm-cli` were free). To adopt scoped `@betternpm/*` later: create a free `betternpm` org at npmjs.com/org/create, restore the scoped names, then re-run `npm run publish:alpha`. The `curl betternpm.org/latest | sh` installer chain is now **live**: source is public at `github.com/BhatiaUday/betternpm` (`main`, MIT), and `betternpm.org/latest` → raw `scripts/install.sh` both resolve (200).
 
 ## ⏭️ Remaining before a credible launch (prioritized)
 1. Real-key end-to-end audit test (above).
-2. ~~Get CLI onto npm~~ — **DONE**: `betternpm-cli@0.0.1`. Optionally also push to GitHub `main` so the `curl | sh` installer path works.
+2. ~~Get CLI onto npm + GitHub~~ — **DONE**: `betternpm-cli@0.0.1` on npm; source public at `github.com/BhatiaUday/betternpm` (MIT); `curl betternpm.org/latest | sh` chain verified (200 at every hop).
 3. Verify failure path: bad/insufficient-credit key returns a clear message (CLI + web), not a 90s timeout.
 4. Sanity-check audit output quality on ~3 real packages (clean / install-scripts / sketchy).
 
@@ -53,6 +53,6 @@ _Last updated: 2026-06-30 (CLI published to npm; launch day)._
 - Richer docs / usage guide.
 
 ## Notes
-- Launch date is **June 30th** (holding page deployed). Flip `/` from holding page to live product when the audit is verified.
+- Launch date **June 30th** — homepage flipped from holding page to live product (install command + live `/audit`, `/leaderboard`, `/p/<pkg>`).
 - WorkOS/login was intentionally removed; leaderboard is CLI-username only.
 - Agent loop: runs until `submit_audit` (ceiling 40 steps = Worker subrequest safety cap, not a quality cap). System prompt hardened against package prompt-injection (untrusted-input rule). Verdict-flooring backstop still TODO.
