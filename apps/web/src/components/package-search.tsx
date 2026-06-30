@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useBrowserSettings, type Provider } from "../lib/browser-settings";
 import { loadBinMap } from "../lib/npm-detect";
@@ -51,11 +51,15 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const [queueError, setQueueError] = useState<string>();
   const [queueResult, setQueueResult] = useState<{ version: string; level: RiskLevel; score: number }>();
 
-  const runSearch = useCallback(async () => {
-    const trimmed = query.trim();
+  const runSearch = useCallback(async (override?: string) => {
+    const trimmed = (override ?? query).trim();
 
     if (trimmed.length < 2) {
       return;
+    }
+
+    if (override !== undefined) {
+      setQuery(override);
     }
 
     setSearchStatus("loading");
@@ -76,6 +80,16 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       setSearchStatus("error");
     }
   }, [endpoint, query]);
+
+  // Deep links like /search?q=left-pad (e.g. the "Run a fresh AI audit" link on a
+  // package page) pre-fill the box and run the search immediately.
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search).get("q");
+    if (initial && initial.trim().length >= 2) {
+      void runSearch(initial.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openAudit = useCallback(async (name: string) => {
     setSelected(name);

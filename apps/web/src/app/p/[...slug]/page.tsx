@@ -151,7 +151,7 @@ export default function PackagePermalinkPage() {
           <ShieldCheck size={22} aria-hidden="true" />
           <p>
             No cached audit yet for {name}{resolvedVersion ? `@${resolvedVersion}` : ""}.{" "}
-            <a href="/audit">Run a fresh AI audit →</a>
+            <a href={`/search?q=${encodeURIComponent(name)}`}>Run a fresh AI audit →</a>
           </p>
         </div>
       )}

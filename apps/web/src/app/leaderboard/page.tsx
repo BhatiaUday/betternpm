@@ -92,7 +92,7 @@ export default function LeaderboardPage() {
         <h1 className="audit-title">Leaderboard</h1>
         <p className="audit-sub">
           Top contributors by estimated audit spend. Set your handle on the{" "}
-          <a href="/search">search</a> or <a href="/audit">audit</a> page (saved in your browser), or in the CLI
+          <a href="/search">search</a> page (saved in your browser), or in the CLI
           (<code>betternpm config set username your-handle</code>), then run an audit to appear here.
         </p>
       </header>
