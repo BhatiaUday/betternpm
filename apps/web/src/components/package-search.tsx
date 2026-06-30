@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck } from "lucide-react";
+import { ChevronDown, ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useBrowserSettings, type Provider } from "../lib/browser-settings";
 import { loadBinMap } from "../lib/npm-detect";
 
@@ -171,49 +171,6 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
 
   return (
     <section className="search-panel" aria-label="Package search">
-      <div className="search-settings">
-        <div className="field">
-          <label htmlFor="ps-provider">Provider</label>
-          <select id="ps-provider" className="select-input" value={settings.provider} onChange={(event) => setProvider(event.target.value as Provider)}>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI (GPT)</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="ps-username">Leaderboard handle</label>
-          <input
-            id="ps-username"
-            className="text-input"
-            placeholder="your-handle (optional)"
-            value={settings.username}
-            onChange={(event) => setUsername(event.target.value)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="ps-key">{settings.provider === "anthropic" ? "Anthropic" : "OpenAI"} API key</label>
-          <div className="input-row">
-            <span className="input-icon" aria-hidden="true"><KeyRound size={16} /></span>
-            <input
-              id="ps-key"
-              className="text-input key-input"
-              type="password"
-              placeholder={settings.provider === "anthropic" ? "sk-ant-…" : "sk-…"}
-              value={apiKey}
-              onChange={(event) => setKey(settings.provider, event.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </div>
-        </div>
-      </div>
-      <p className="field-hint">
-        Saved in this browser only. Your key is sent over HTTPS solely to run an audit and is never stored on our servers.
-        Set a handle to appear on the <a href="/leaderboard">leaderboard</a>.
-      </p>
-
       <div className="input-row search-bar">
         <input
           className="text-input"
@@ -234,6 +191,65 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
           <span>Search</span>
         </button>
       </div>
+      <p className="field-hint search-note">
+        Search is free and needs no API key — browse any package and see if it&apos;s been audited.
+        Add your provider and key below only when you want to <strong>queue an AI audit</strong>.
+      </p>
+
+      <details className="settings-disclosure">
+        <summary>
+          <span className="disclosure-label">
+            <SlidersHorizontal size={15} aria-hidden="true" />
+            Audit settings
+            <span className="disclosure-tag">optional</span>
+          </span>
+          <ChevronDown className="disclosure-chevron" size={16} aria-hidden="true" />
+        </summary>
+        <div className="settings-body">
+          <div className="search-settings">
+            <div className="field">
+              <label htmlFor="ps-provider">Provider</label>
+              <select id="ps-provider" className="select-input" value={settings.provider} onChange={(event) => setProvider(event.target.value as Provider)}>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (GPT)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="ps-username">Leaderboard handle</label>
+              <input
+                id="ps-username"
+                className="text-input"
+                placeholder="your-handle (optional)"
+                value={settings.username}
+                onChange={(event) => setUsername(event.target.value)}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="ps-key">{settings.provider === "anthropic" ? "Anthropic" : "OpenAI"} API key</label>
+              <div className="input-row">
+                <span className="input-icon" aria-hidden="true"><KeyRound size={16} /></span>
+                <input
+                  id="ps-key"
+                  className="text-input key-input"
+                  type="password"
+                  placeholder={settings.provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+                  value={apiKey}
+                  onChange={(event) => setKey(settings.provider, event.target.value)}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          </div>
+          <p className="field-hint">
+            Saved in this browser only. Your key is sent over HTTPS solely to run an audit and is never stored on our servers.
+            Set a handle to appear on the <a href="/leaderboard">leaderboard</a>.
+          </p>
+        </div>
+      </details>
 
       {searchStatus === "error" && <p className="error-line" role="alert">Search failed. Try again.</p>}
       {searched && searchStatus === "idle" && results.length === 0 && (

@@ -11,9 +11,15 @@ export default function Page() {
           before an npm package ever executes — then hands off to npm.
         </p>
 
-        <div className="command-preview" aria-label="Install command">
-          <Terminal size={18} aria-hidden="true" />
-          <code>npm i -g betternpm-cli</code>
+        <div className="command-stack" aria-label="Install commands">
+          <div className="command-preview">
+            <Terminal size={18} aria-hidden="true" />
+            <code>npm i -g betternpm-cli</code>
+          </div>
+          <div className="command-preview">
+            <Terminal size={18} aria-hidden="true" />
+            <code>curl betternpm.org/latest | sh</code>
+          </div>
         </div>
 
         <div className="link-row" aria-label="Project links">

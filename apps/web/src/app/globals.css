@@ -93,6 +93,18 @@ h1 {
   padding: 15px 17px;
 }
 
+.command-stack {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 40px;
+}
+
+.command-stack .command-preview {
+  margin-top: 0;
+}
+
 .link-row {
   display: grid;
   gap: 12px;
@@ -758,5 +770,71 @@ h1 {
   .search-settings {
     grid-template-columns: 1fr;
   }
+}
+
+.settings-disclosure {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 14px;
+}
+
+.settings-disclosure > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  list-style: none;
+  padding: 12px 14px;
+}
+
+.settings-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-disclosure > summary:hover .disclosure-label {
+  color: var(--blue);
+}
+
+.disclosure-label {
+  align-items: center;
+  color: var(--ink);
+  display: inline-flex;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 8px;
+}
+
+.disclosure-tag {
+  background: rgba(109, 103, 93, 0.16);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+}
+
+.disclosure-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.settings-disclosure[open] .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+.settings-body {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+  padding: 16px 14px;
+}
+
+.search-note {
+  margin-top: 10px;
 }
 
