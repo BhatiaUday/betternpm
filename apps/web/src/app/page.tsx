@@ -8,13 +8,24 @@ export default function Page() {
         <p className="kicker">Now live on npm</p>
         <h1 id="launch-title">Inspect before you run.</h1>
         <p className="launch-copy">
-          betternpm catches malware, typosquats, and known vulnerabilities
-          before an npm package ever executes — then hands off to npm.
+          betternpm inspects npm packages for malware, typosquats, and known vulnerabilities
+          before they ever execute — in your terminal or your browser, then hands off to npm.
         </p>
 
         <div className="command-stack" aria-label="Install commands">
           <CopyCommand command="npm i -g betternpm-cli" />
           <CopyCommand command="curl -fsSL https://betternpm.org/latest | sh" />
+        </div>
+
+        <div className="home-cta">
+          <a className="home-cta-primary" href="/search">
+            Search &amp; audit packages
+            <ArrowUpRight size={18} aria-hidden="true" />
+          </a>
+          <p className="home-cta-note">
+            No install needed — audit any npm package right in your browser. Sign in with GitHub
+            to claim your handle on the <a href="/leaderboard">leaderboard</a>.
+          </p>
         </div>
 
         <div className="link-row" aria-label="Project links">

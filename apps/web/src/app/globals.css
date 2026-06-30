@@ -105,6 +105,45 @@ h1 {
   margin-top: 0;
 }
 
+.home-cta {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+  max-width: 760px;
+}
+
+.home-cta-primary {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 8px;
+  color: var(--paper-strong);
+  display: inline-flex;
+  font-size: 16px;
+  font-weight: 600;
+  gap: 8px;
+  padding: 13px 20px;
+  width: fit-content;
+}
+
+.home-cta-primary:hover {
+  background: #195e44;
+}
+
+.home-cta-note {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.home-cta-note a {
+  color: var(--blue);
+}
+
+.home-cta-note a:hover {
+  text-decoration: underline;
+}
+
 .copy-button {
   align-items: center;
   background: rgba(255, 250, 240, 0.12);
