@@ -774,7 +774,7 @@ Findings:
                   <li>First public product is not the website. It is: run <code>betternpx</code>/<code>bnpx</code> instead of <code>npx</code>, and <code>betternpm</code>/<code>bnpm</code> instead of <code>npm</code>.</li>
                   <li>Publish <code>@betternpm/core</code> and <code>@betternpm/cli</code>, exposing <code>betternpm</code>, <code>bnpm</code>, <code>betternpx</code>, and <code>bnpx</code> bins.</li>
                   <li>Reserve <code>betternpx</code> as the public package name. <code>betternpm</code> and <code>bnpm</code> are already taken, and npm rejected unscoped <code>bnpx</code> as too similar to existing packages, but all three can still be CLI bin aliases from <code>@betternpm/cli</code>.</li>
-                  <li>Add a GitHub-source installer path so <code>curl https://betternpm.org/latest | sh</code> can install/link the CLI before npm publishing is fully polished.</li>
+                  <li>Add a GitHub-source installer path so <code>curl -fsSL https://betternpm.org/latest | sh</code> can install/link the CLI before npm publishing is fully polished.</li>
                 </ul>
               </div>
             </article>
@@ -862,7 +862,7 @@ Findings:
             </article>
             <article class="card">
               <strong>Installer route</strong>
-              <p>Serve <code>/latest</code> as an install script endpoint for <code>curl https://betternpm.org/latest | sh</code>, backed by GitHub source or release artifacts.</p>
+              <p>Serve <code>/latest</code> as an install script endpoint for <code>curl -fsSL https://betternpm.org/latest | sh</code>, backed by GitHub source or release artifacts.</p>
             </article>
             <article class="card">
               <strong>Launch hook</strong>

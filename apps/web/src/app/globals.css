@@ -105,6 +105,22 @@ h1 {
   margin-top: 0;
 }
 
+.copy-button {
+  align-items: center;
+  background: rgba(255, 250, 240, 0.12);
+  border: none;
+  border-radius: 6px;
+  color: var(--paper-strong);
+  cursor: pointer;
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 6px;
+}
+
+.copy-button:hover {
+  background: rgba(255, 250, 240, 0.22);
+}
+
 .link-row {
   display: grid;
   gap: 12px;

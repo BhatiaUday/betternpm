@@ -1,4 +1,5 @@
-import { ArrowUpRight, Terminal } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
+import { CopyCommand } from "../components/copy-command";
 
 export default function Page() {
   return (
@@ -12,14 +13,8 @@ export default function Page() {
         </p>
 
         <div className="command-stack" aria-label="Install commands">
-          <div className="command-preview">
-            <Terminal size={18} aria-hidden="true" />
-            <code>npm i -g betternpm-cli</code>
-          </div>
-          <div className="command-preview">
-            <Terminal size={18} aria-hidden="true" />
-            <code>curl betternpm.org/latest | sh</code>
-          </div>
+          <CopyCommand command="npm i -g betternpm-cli" />
+          <CopyCommand command="curl -fsSL https://betternpm.org/latest | sh" />
         </div>
 
         <div className="link-row" aria-label="Project links">
