@@ -52,14 +52,18 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const [queueResult, setQueueResult] = useState<{ version: string; level: RiskLevel; score: number }>();
 
   const runSearch = useCallback(async (override?: string) => {
-    const trimmed = (override ?? query).trim();
+    const raw = (override ?? query).trim();
+    const urlName = parseNpmUrl(raw);
+    const term = urlName ?? raw;
 
-    if (trimmed.length < 2) {
+    if (term.length < 2) {
       return;
     }
 
-    if (override !== undefined) {
-      setQuery(override);
+    // Reflect the resolved package name (a pasted URL → its name) or an override.
+    const reflected = urlName ?? (override !== undefined ? override : undefined);
+    if (reflected !== undefined) {
+      setQuery(reflected);
     }
 
     setSearchStatus("loading");
@@ -67,14 +71,24 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
     setSelected(undefined);
 
     try {
-      const response = await fetch(`${endpoint}/v1/registry-search?q=${encodeURIComponent(trimmed)}`);
+      const response = await fetch(`${endpoint}/v1/registry-search?q=${encodeURIComponent(term)}`);
 
       if (!response.ok) {
         throw new Error();
       }
 
       const data = await response.json() as { results?: RegistryResult[] };
-      setResults(data.results ?? []);
+      let results = data.results ?? [];
+
+      // A package URL points at exactly one package — narrow to that match.
+      if (urlName) {
+        const exact = results.filter((result) => result.name.toLowerCase() === urlName.toLowerCase());
+        if (exact.length > 0) {
+          results = exact;
+        }
+      }
+
+      setResults(results);
       setSearchStatus("idle");
     } catch {
       setSearchStatus("error");
@@ -194,7 +208,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       <div className="input-row search-bar">
         <input
           className="text-input"
-          placeholder="search npm — e.g. left-pad, create-next-app, lodash"
+          placeholder="search npm or paste a package URL — e.g. lodash, npmjs.com/package/react"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -383,4 +397,22 @@ async function pollRequest(endpoint: string, id: string, onProgress: (value: str
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Detects an npm package URL (npmjs.com/package/<name>[/v/<version>]) and returns
+// the package name, so pasting a URL resolves to that one package.
+function parseNpmUrl(input: string): string | undefined {
+  const match = input.match(/npmjs\.com\/package\/([^?#\s]+)/i);
+
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const path = match[1].replace(/\/v\/.*$/, "").replace(/\/+$/, "");
+
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }

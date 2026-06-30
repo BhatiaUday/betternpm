@@ -488,6 +488,65 @@ h1 {
   gap: 6px;
 }
 
+.audit-history {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding-top: 22px;
+}
+
+.audit-history-title {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+
+.audit-history-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.audit-history-list li {
+  align-items: center;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 14px;
+}
+
+.audit-history-list li.is-current {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(30, 113, 82, 0.35);
+}
+
+.audit-history-list .ah-version {
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.audit-history-list .ah-version:hover {
+  text-decoration: underline;
+}
+
+.audit-history-list .ah-engine {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+
+.audit-history-list .ah-date {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+
 .finding-list {
   display: grid;
   gap: 10px;

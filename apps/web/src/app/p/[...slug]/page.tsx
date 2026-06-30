@@ -24,6 +24,16 @@ interface AuditRecord {
   createdAt?: string;
 }
 
+interface AuditHistoryEntry {
+  version: string;
+  target: string;
+  provider: string;
+  model: string;
+  riskLevel: RiskLevel;
+  score: number;
+  createdAt: string;
+}
+
 const VERSION_TAGS = new Set(["latest", "next", "beta", "alpha", "canary", "rc"]);
 
 function looksLikeVersion(segment: string): boolean {
@@ -60,6 +70,7 @@ export default function PackagePermalinkPage() {
   const [status, setStatus] = useState<"loading" | "found" | "missing" | "error">("loading");
   const [audit, setAudit] = useState<AuditRecord>();
   const [resolvedVersion, setResolvedVersion] = useState<string | undefined>(requestedVersion);
+  const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
 
   useEffect(() => {
     if (!name) {
@@ -124,14 +135,44 @@ export default function PackagePermalinkPage() {
     };
   }, [name, requestedVersion]);
 
+  useEffect(() => {
+    if (!name) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await fetch(`${API_URL}/v1/packages/${name}/audits`);
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json() as { audits?: AuditHistoryEntry[] };
+
+        if (active) {
+          setHistory(data.audits ?? []);
+        }
+      } catch {
+        // Audit history is best-effort; ignore failures.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [name]);
+
   return (
     <main className="audit-shell">
       <header className="audit-masthead">
         <p className="kicker">package audit</p>
         <h1 className="audit-title">{name || "Unknown package"}{resolvedVersion ? `@${resolvedVersion}` : ""}</h1>
         <p className="audit-sub">
-          The latest cached Better npm audit for this package.{" "}
-          <a href="/leaderboard"><ArrowLeft size={13} aria-hidden="true" /> Back to search</a>
+          Cached audit and history for this package.{" "}
+          <a href="/search"><ArrowLeft size={13} aria-hidden="true" /> Back to search</a>
         </p>
       </header>
 
@@ -157,6 +198,22 @@ export default function PackagePermalinkPage() {
       )}
 
       {status === "found" && audit && <AuditResult audit={audit} />}
+
+      {history.length > 0 && (
+        <section className="audit-history" aria-label="Audit history">
+          <h2 className="audit-history-title">Audit history</h2>
+          <ul className="audit-history-list">
+            {history.map((entry) => (
+              <li key={`${entry.version}-${entry.createdAt}`} className={resolvedVersion === entry.version ? "is-current" : undefined}>
+                <a className="ah-version" href={`/p/${encodeURIComponent(name)}/${encodeURIComponent(entry.version)}`}>v{entry.version}</a>
+                <span className={`risk-badge risk-${entry.riskLevel}`}>{entry.riskLevel} {entry.score}</span>
+                <span className="ah-engine">{entry.provider} · {entry.model}</span>
+                <time className="ah-date" dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleDateString()}</time>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }

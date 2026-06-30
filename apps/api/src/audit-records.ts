@@ -119,6 +119,48 @@ export async function readLatestAuditForPackage(input: {
   return row ? rowToAuditRecord(row) : undefined;
 }
 
+export interface AuditHistoryEntry {
+  version: string;
+  target: AuditTargetKind;
+  provider: AuditProvider;
+  model: string;
+  riskLevel: RiskLevel;
+  score: number;
+  createdAt: string;
+}
+
+// Returns the latest audit per version for a package, newest first — the data
+// behind a package page's "audit history" timeline.
+export async function readAuditHistoryForPackage(db: D1Database, packageName: string, limit = 50): Promise<AuditHistoryEntry[]> {
+  const capped = Math.min(Math.max(limit, 1), 100);
+  const result = await db.prepare(`
+    SELECT version, audit_target, provider, model, risk_level, score, MAX(created_at) AS created_at
+    FROM audit_records
+    WHERE package_name = ?
+    GROUP BY version
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(packageName, capped).all<{
+    version: string;
+    audit_target: AuditTargetKind;
+    provider: AuditProvider;
+    model: string;
+    risk_level: RiskLevel;
+    score: number;
+    created_at: string;
+  }>();
+
+  return (result.results ?? []).map((row) => ({
+    version: row.version,
+    target: row.audit_target,
+    provider: row.provider,
+    model: row.model,
+    riskLevel: row.risk_level,
+    score: row.score,
+    createdAt: row.created_at
+  }));
+}
+
 export async function writeAuditRecord(db: D1Database, record: AuditRecord): Promise<void> {
   await db.prepare(`
     INSERT INTO audit_records (

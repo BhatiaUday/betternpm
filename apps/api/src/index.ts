@@ -5,7 +5,7 @@ import {
   markAuditRequestRunning,
   readAuditRequestRecord
 } from "./audit-requests.js";
-import { createAuditId, readAuditRecord, readAuditRecordById, readLatestAuditRecord, readLatestAuditForPackage, writeAuditRecord } from "./audit-records.js";
+import { createAuditId, readAuditRecord, readAuditRecordById, readLatestAuditRecord, readLatestAuditForPackage, readAuditHistoryForPackage, writeAuditRecord } from "./audit-records.js";
 import { buildPackageFacts, fetchPackageMetadata, fetchWeeklyDownloads, resolveVersion, searchNpmRegistry, type NpmSearchHit } from "./npm.js";
 import { queryOsv } from "./osv.js";
 import { defaultModelFor, runProviderAudit } from "./provider-audit.js";
@@ -114,6 +114,7 @@ function routeBucket(method: string, pathname: string): string {
   const collapsed = pathname
     .replace(/^\/v1\/audit-requests\/[^/]+$/, "/v1/audit-requests/:id")
     .replace(/^\/v1\/packages\/.+\/versions$/, "/v1/packages/:pkg/versions")
+    .replace(/^\/v1\/packages\/.+\/audits$/, "/v1/packages/:pkg/audits")
     .replace(/^\/v1\/packages\/.+\/[^/]+\/summary$/, "/v1/packages/:pkg/:version/summary")
     .replace(/^\/v1\/packages\/.+\/[^/]+\/audit$/, "/v1/packages/:pkg/:version/audit");
 
@@ -146,6 +147,7 @@ export default {
           auditRequests: "/v1/audit-requests",
           packageVersions: "/v1/packages/:package/versions",
           packageSummary: "/v1/packages/:package/:version/summary",
+          packageAudits: "/v1/packages/:package/audits",
           leaderboard: "/v1/leaderboard",
           search: "/v1/search?q=",
           registrySearch: "/v1/registry-search?q=",
@@ -177,6 +179,11 @@ export default {
     const versionsMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/versions$/);
     if (request.method === "GET" && versionsMatch) {
       return getPackageVersions(request, env, decodeURIComponent(versionsMatch[1] ?? ""));
+    }
+
+    const packageAuditsMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/audits$/);
+    if (request.method === "GET" && packageAuditsMatch) {
+      return getPackageAudits(request, env, decodeURIComponent(packageAuditsMatch[1] ?? ""));
     }
 
     if (request.method === "POST" && url.pathname === "/v1/audits") {
@@ -316,6 +323,15 @@ async function getPackageVersions(request: Request, env: Env, packageName: strin
   } catch (error) {
     return json({ error: `Unable to resolve "${packageName}" on the npm registry.`, detail: errorMessage(error) }, 404, request, env);
   }
+}
+
+async function getPackageAudits(request: Request, env: Env, packageName: string): Promise<Response> {
+  if (!packageName) {
+    return json({ error: "packageName is required" }, 400, request, env);
+  }
+
+  const audits = await readAuditHistoryForPackage(env.DB, packageName, 50);
+  return json({ packageName, audits }, 200, request, env);
 }
 
 async function getAudit(request: Request, env: Env): Promise<Response> {
