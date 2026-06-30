@@ -1,0 +1,17 @@
+{
+  "name": "betternpx",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Reserved public package name for Better npm's safer npx command.",
+  "bin": {
+    "betternpx": "bin/betternpx.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

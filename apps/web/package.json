@@ -1,0 +1,24 @@
+{
+  "name": "@betternpm/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^1.21.0",
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

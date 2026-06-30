@@ -1,0 +1,41 @@
+name = "betternpm-api"
+main = "src/index.ts"
+compatibility_date = "2026-06-22"
+workers_dev = true
+
+routes = [{ pattern = "api.betternpm.org", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "betternpm-audits"
+database_id = "54d8d204-8478-4164-bbf5-c1b088cf0f8c"
+
+[[queues.producers]]
+binding = "AUDIT_QUEUE"
+queue = "betternpm-audit-requests"
+
+[[queues.consumers]]
+queue = "betternpm-audit-requests"
+max_batch_size = 5
+max_batch_timeout = 5
+max_retries = 3
+retry_delay = 30
+
+# Abuse protection for the open, unauthenticated endpoints. Requires Wrangler >= 4.36.0.
+# The Worker fails open if these bindings are unavailable, so deploys without the
+# Rate Limiting API still serve traffic.
+[[ratelimits]]
+name = "API_RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[ratelimits]]
+name = "AUDIT_RATE_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60

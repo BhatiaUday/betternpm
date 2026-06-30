@@ -1,0 +1,28 @@
+{
+  "name": "@betternpm/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker API for Better npm package summaries and BYOK audits.",
+  "scripts": {
+    "cf:whoami": "wrangler whoami",
+    "dev": "wrangler dev",
+    "db:create": "wrangler d1 create betternpm-audits",
+    "db:init:local": "wrangler d1 execute betternpm-audits --local --file src/schema.sql",
+    "db:init:remote": "wrangler d1 execute betternpm-audits --remote --file src/schema.sql",
+    "db:migrate:local": "wrangler d1 execute betternpm-audits --local --file src/migrations/0002_audit_target.sql",
+    "db:migrate:remote": "wrangler d1 execute betternpm-audits --remote --file src/migrations/0002_audit_target.sql",
+    "db:migrate:requested-by:local": "wrangler d1 execute betternpm-audits --local --file src/migrations/0003_audit_requested_by_user.sql",
+    "db:migrate:requested-by:remote": "wrangler d1 execute betternpm-audits --remote --file src/migrations/0003_audit_requested_by_user.sql",
+    "db:migrate:audit-requests:local": "wrangler d1 execute betternpm-audits --local --file src/migrations/0004_audit_requests.sql",
+    "db:migrate:audit-requests:remote": "wrangler d1 execute betternpm-audits --remote --yes --file src/migrations/0004_audit_requests.sql",
+    "db:migrate:leaderboard:local": "wrangler d1 execute betternpm-audits --local --file src/migrations/0006_leaderboard.sql",
+    "db:migrate:leaderboard:remote": "wrangler d1 execute betternpm-audits --remote --yes --file src/migrations/0006_leaderboard.sql",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "wrangler": "^4.21.2"
+  }
+}

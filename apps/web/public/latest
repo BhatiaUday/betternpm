@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+INSTALLER_URL="${BETTERNPM_INSTALLER_URL:-https://raw.githubusercontent.com/BhatiaUday/betternpm/main/scripts/install.sh}"
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "betternpm installer: curl is required." >&2
+  exit 1
+fi
+
+curl -fsSL "$INSTALLER_URL" | sh

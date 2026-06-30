@@ -1,0 +1,37 @@
+{
+  "name": "betternpm-core",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Core package inspector and risk scoring engine for Better npm.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BhatiaUday/betternpm.git",
+    "directory": "packages/core"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}

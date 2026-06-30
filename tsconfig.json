@@ -1,0 +1,25 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./apps/api"
+    }
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true
+  }
+}

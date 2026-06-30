@@ -1,0 +1,35 @@
+{
+  "name": "betternpm-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A safer npm/npx trust layer for inspecting packages before execution.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm -w betternpm-cli run dev --",
+    "inspect": "npm -w betternpm-cli run dev -- inspect",
+    "build:cli": "npm -w betternpm-core run build && npm -w betternpm-cli run build",
+    "link:cli": "npm run build:cli && npm -w betternpm-cli link",
+    "publish:alpha:dry-run": "DRY_RUN=1 ./scripts/publish-npm-alpha.sh",
+    "publish:alpha": "DRY_RUN=0 ./scripts/publish-npm-alpha.sh",
+    "publish:reserve:dry-run": "PUBLISH_SET=reserve DRY_RUN=1 ./scripts/publish-npm-alpha.sh",
+    "publish:reserve": "PUBLISH_SET=reserve DRY_RUN=0 ./scripts/publish-npm-alpha.sh",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b --pretty false",
+    "test": "npm run test --workspaces --if-present",
+    "check": "npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.3",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "betternpm-cli",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Better npm CLI for npm/npx replacement commands backed by package inspection.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BhatiaUday/betternpm.git",
+    "directory": "packages/cli"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./bin": "./dist/index.js"
+  },
+  "bin": {
+    "betternpm": "dist/index.js",
+    "bnpm": "dist/index.js",
+    "betternpx": "dist/index.js",
+    "bnpx": "dist/index.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "dev": "tsx --conditions development src/index.ts",
+    "build": "npm run clean && tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "betternpm-core": "0.0.1"
+  }
+}

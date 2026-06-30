@@ -1,0 +1,1 @@
+ALTER TABLE audit_records ADD COLUMN requested_by_user_id TEXT;

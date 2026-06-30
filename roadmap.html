@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Better npm Internal Product Roadmap</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f7f3ea;
+        --paper-strong: #fffdf7;
+        --ink: #171513;
+        --muted: #6f685f;
+        --line: #d8cfc1;
+        --green: #18795b;
+        --green-soft: #d9eee5;
+        --amber: #b76e00;
+        --amber-soft: #f3dfba;
+        --red: #b9342b;
+        --red-soft: #f0c9c5;
+        --blue: #2d5f83;
+        --blue-soft: #d8e6ed;
+        --shadow: 0 24px 80px rgba(23, 21, 19, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(90deg, rgba(23, 21, 19, 0.045) 1px, transparent 1px),
+          linear-gradient(rgba(23, 21, 19, 0.04) 1px, transparent 1px),
+          var(--paper);
+        background-size: 32px 32px;
+        color: var(--ink);
+        font-family: Charter, Georgia, "Times New Roman", serif;
+        font-size: 16px;
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: rgba(247, 243, 234, 0.92);
+        backdrop-filter: blur(14px);
+      }
+
+      .topbar .shell {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 64px;
+      }
+
+      .brand {
+        display: inline-grid;
+        grid-template-columns: 28px auto;
+        align-items: center;
+        gap: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+        font-weight: 800;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 2px solid var(--ink);
+        background: var(--green-soft);
+        box-shadow: 4px 4px 0 var(--ink);
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      nav a {
+        min-height: 32px;
+        padding: 5px 10px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        border-color: var(--line);
+        background: var(--paper-strong);
+        color: var(--ink);
+      }
+
+      .hero {
+        padding: 72px 0 40px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+        gap: 32px;
+        align-items: stretch;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        margin: 0 0 20px;
+        padding: 3px 9px;
+        border: 1px solid var(--ink);
+        background: var(--amber-soft);
+        box-shadow: 3px 3px 0 var(--ink);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.04;
+      }
+
+      h1 {
+        max-width: 900px;
+        font-size: clamp(3rem, 8vw, 6.9rem);
+        font-weight: 900;
+      }
+
+      h2 {
+        max-width: 760px;
+        font-size: clamp(2rem, 4vw, 4.25rem);
+        font-weight: 900;
+      }
+
+      h3 {
+        font-size: 1.15rem;
+        font-weight: 900;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 22px 0 0;
+        color: #38332e;
+        font-size: clamp(1.1rem, 2vw, 1.42rem);
+      }
+
+      .status-panel {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+        min-height: 100%;
+        padding: 22px;
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        background: var(--paper-strong);
+        box-shadow: var(--shadow);
+      }
+
+      .terminal {
+        overflow: hidden;
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        background: #171513;
+        color: #f7f3ea;
+      }
+
+      .terminal-head {
+        display: flex;
+        gap: 6px;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(247, 243, 234, 0.18);
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--green-soft);
+      }
+
+      .dot:nth-child(2) {
+        background: var(--amber-soft);
+      }
+
+      .dot:nth-child(3) {
+        background: var(--red-soft);
+      }
+
+      pre {
+        margin: 0;
+        padding: 18px;
+        overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.95em;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        padding: 5px 9px;
+        border: 1px solid var(--ink);
+        border-radius: 999px;
+        background: var(--green-soft);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+
+      section {
+        padding: 52px 0;
+      }
+
+      .section-kicker {
+        margin: 0 0 12px;
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .section-copy {
+        max-width: 780px;
+        margin: 16px 0 0;
+        color: #403a34;
+        font-size: 1.08rem;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 28px;
+        align-items: start;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card {
+        min-height: 100%;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 253, 247, 0.82);
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 7px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+      }
+
+      .card p {
+        margin: 0;
+        color: #484139;
+      }
+
+      .audit-ladder {
+        display: grid;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .audit-step {
+        display: grid;
+        grid-template-columns: 52px 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 16px;
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        background: var(--paper-strong);
+        box-shadow: 5px 5px 0 rgba(23, 21, 19, 0.12);
+      }
+
+      .step-number {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border: 2px solid var(--ink);
+        background: var(--blue-soft);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 900;
+      }
+
+      .audit-step p {
+        margin: 5px 0 0;
+        color: #484139;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 8px;
+        border: 1px solid var(--ink);
+        border-radius: 999px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .done {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .next {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .later {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .risk-table {
+        width: 100%;
+        margin-top: 26px;
+        border-collapse: collapse;
+        border: 2px solid var(--ink);
+        background: var(--paper-strong);
+      }
+
+      .risk-table th,
+      .risk-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .risk-table th {
+        background: var(--green-soft);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+      }
+
+      .risk-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 18px;
+        margin-top: 30px;
+      }
+
+      .priority {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 18px;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .priority:last-child {
+        border-bottom: 0;
+      }
+
+      .priority-label {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .priority h3 {
+        margin-bottom: 8px;
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 20px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      .callout {
+        margin-top: 28px;
+        padding: 20px;
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        background: var(--amber-soft);
+        box-shadow: 6px 6px 0 var(--ink);
+      }
+
+      .callout p {
+        margin: 0;
+        font-size: 1.08rem;
+      }
+
+      .footer {
+        padding: 32px 0 52px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+      }
+
+      @media (max-width: 860px) {
+        .topbar .shell,
+        .hero-grid,
+        .split,
+        .grid,
+        .grid.two,
+        .priority {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar .shell {
+          align-items: flex-start;
+          padding: 14px 0;
+        }
+
+        nav {
+          justify-content: flex-start;
+        }
+
+        .hero {
+          padding-top: 44px;
+        }
+
+        .audit-step {
+          grid-template-columns: 42px 1fr;
+        }
+
+        .audit-step .badge {
+          grid-column: 2;
+          justify-self: start;
+        }
+
+        .risk-table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .shell {
+          width: min(100% - 20px, 1180px);
+        }
+
+        h1 {
+          font-size: 2.7rem;
+        }
+
+        .status-panel,
+        .card,
+        .audit-step,
+        .callout {
+          padding: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell">
+        <a class="brand" href="#top" aria-label="Better npm roadmap home">
+          <span class="brand-mark">bn</span>
+          Better npm
+        </a>
+        <nav aria-label="Roadmap sections">
+          <a href="#audit">Audit Model</a>
+          <a href="#status">Status</a>
+          <a href="#roadmap">Actions</a>
+          <a href="#security">Security</a>
+          <a href="#distribution">Distribution</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <p class="eyebrow">Internal product roadmap</p>
+            <h1>Safer <code>npx</code> now. npm-compatible wrapper next.</h1>
+            <p class="lede">
+              This is an action-plan document, not public copy. The product is the trust layer: server-verified audits of exact npm artifacts before execution. The website is distribution, not the roadmap.
+            </p>
+          </div>
+
+          <aside class="status-panel" aria-label="Current working demo">
+            <div class="chips" aria-label="Current status tags">
+              <span class="chip">npx first</span>
+              <span class="chip">server canonical</span>
+              <span class="chip">BYOK main layer</span>
+              <span class="chip">install later</span>
+            </div>
+            <div class="terminal" aria-label="Example terminal output">
+              <div class="terminal-head" aria-hidden="true">
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+              </div>
+              <pre><code>$ npm run inspect -- create-next-app
+
+Better npm inspection
+
+create-next-app@16.2.9
+Risk: MEDIUM (75/100)
+Downloads: 1,374,549
+Source scan: 80 files, 3 findings
+Findings:
+- MEDIUM Source uses dynamic code execution
+- LOW Source uses child process APIs
+- Review: GitHub source link available</code></pre>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="audit">
+        <div class="shell">
+          <p class="section-kicker">Audit model</p>
+          <h2>Server audit is canonical. Regex is evidence gathering.</h2>
+          <p class="section-copy">
+            A cached audit must never trust user-machine code. The client sends package identity and optional integrity; the server resolves from npm, downloads the npm tarball, verifies registry integrity, extracts bounded evidence, and uses the user's Anthropic/OpenAI key only for cache misses.
+          </p>
+
+          <div class="audit-ladder">
+            <article class="audit-step">
+              <span class="step-number">1</span>
+              <div>
+                <h3>Target-aware request</h3>
+                <p>The CLI requests an audit for a target such as <code>npx</code>. Future <code>npm-install</code> audits use the same pipeline, but a different prompt, cache key, and risk policy.</p>
+              </div>
+              <span class="badge done">built</span>
+            </article>
+
+            <article class="audit-step">
+              <span class="step-number">2</span>
+              <div>
+                <h3>npm-only source of truth</h3>
+                <p>The server resolves package metadata, version, tarball URL, and integrity from npm. The client never submits source code for cached audits.</p>
+              </div>
+              <span class="badge done">built</span>
+            </article>
+
+            <article class="audit-step">
+              <span class="step-number">3</span>
+              <div>
+                <h3>Exact artifact identity</h3>
+                <p>Cache entries key by target, package, resolved version, integrity, scanner profile, provider, and model. Name and version alone are not enough.</p>
+              </div>
+              <span class="badge done">built</span>
+            </article>
+
+            <article class="audit-step">
+              <span class="step-number">4</span>
+              <div>
+                <h3>Evidence gathering</h3>
+                <p>Deterministic checks find scripts, package age, OSV matches, obfuscation signals, credential references, network calls, and reviewable source links. This evidence feeds the report and the model prompt.</p>
+              </div>
+              <span class="badge done">built</span>
+            </article>
+
+            <article class="audit-step">
+              <span class="step-number">5</span>
+              <div>
+                <h3>BYOK model judgment</h3>
+                <p>Anthropic/OpenAI review is the main judgment layer. The server sends bounded package facts and source evidence, stores normalized output only, and never persists the user key.</p>
+              </div>
+              <span class="badge next">harden</span>
+            </article>
+          </div>
+
+          <table class="risk-table" aria-label="Risk level behavior">
+            <thead>
+              <tr>
+                <th>Risk level</th>
+                <th>Meaning</th>
+                <th>Execution behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Low</strong></td>
+                <td>Only neutral or low-severity findings are present.</td>
+                <td>Can run after prompt, or immediately with <code>--yes</code>.</td>
+              </tr>
+              <tr>
+                <td><strong>Medium</strong></td>
+                <td>There are notable concerns, but nothing currently blocking.</td>
+                <td>Can run after user approval. The warning should be visible and specific.</td>
+              </tr>
+              <tr>
+                <td><strong>High</strong></td>
+                <td>Potentially dangerous behavior, such as install-time scripts or severe heuristic matches.</td>
+                <td>Requires <code>--force-install</code> so accidental execution is harder.</td>
+              </tr>
+              <tr>
+                <td><strong>Blocked</strong></td>
+                <td>Known vulnerabilities or explicit blocking findings are present.</td>
+                <td>Requires <code>--force-install</code>, and should be hard to bypass casually.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="status">
+        <div class="shell split">
+          <div>
+            <p class="section-kicker">Current state</p>
+            <h2>The foundation exists. Now make the trust flow sharp.</h2>
+            <p class="section-copy">
+              We have enough code to dogfood the concept. The next work is not a public site; it is making <code>betternpx</code>/<code>bnpx</code> reliable as <code>npx</code> replacements, while <code>betternpm</code>/<code>bnpm</code> stay npm-compatible until install auditing is ready.
+            </p>
+          </div>
+          <div class="grid two">
+            <article class="card">
+              <strong>Core package</strong>
+              <p>Shared inspector engine. Parses specs, resolves npm metadata, queries downloads and OSV, scans tarballs locally, scores risk, and caches exact package inspections.</p>
+            </article>
+            <article class="card">
+              <strong>CLI package</strong>
+              <p>Command surface for both families: <code>betternpx</code>/<code>bnpx</code> replace <code>npx</code> with inspect-before-exec, while <code>betternpm</code>/<code>bnpm</code> replace <code>npm</code>. Ordinary npm commands pass through; direct package installs are inspected before npm runs.</p>
+            </article>
+            <article class="card">
+              <strong>Server audit</strong>
+              <p>Cloudflare Worker resolves from npm, verifies integrity, scans npm tarballs, supports target-aware D1 cache keys, and has BYOK provider plumbing.</p>
+            </article>
+            <article class="card">
+              <strong>Verified commands</strong>
+              <p><code>npm run check</code>, package inspection, local Worker audit creation/cache hits, summary lookup, and exact allow-cache execution all pass locally.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="roadmap">
+        <div class="shell">
+          <p class="section-kicker">Action points</p>
+          <h2>The product roadmap is the trust layer.</h2>
+
+          <div class="timeline">
+            <article class="priority">
+              <div class="priority-label">P0</div>
+              <div>
+                <h3>Make <code>betternpx</code>/<code>bnpx</code> excellent</h3>
+                <ul>
+                  <li><code>betternpx create-next-app</code> and <code>bnpx create-next-app</code> should work as safer replacements for <code>npx create-next-app</code>.</li>
+                  <li><code>betternpm</code> and <code>bnpm</code> should behave like <code>npm</code> first, inspect direct package installs now, then add full dependency graph inspection as soon as that path is trustworthy.</li>
+                  <li>Resolve the exact npm version, audit it, and run only that exact artifact.</li>
+                  <li>Make approve, block, <code>--force-install</code>, <code>--force-fresh-audit</code>, JSON, and non-interactive behavior boringly reliable.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P1</div>
+              <div>
+                <h3>Make server audit canonical</h3>
+                <ul>
+                  <li>Never accept client-submitted source for cacheable audits.</li>
+                  <li>Always pull metadata and tarballs from npm on the server.</li>
+                  <li>Reject caller integrity values that do not match npm registry metadata.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P2</div>
+              <div>
+                <h3>Make BYOK audit the main security layer</h3>
+                <ul>
+                  <li>Use <code>anthropic</code> or <code>openai</code> from CLI config.</li>
+                  <li>Send the user key only for server-side cache misses or explicit forced refreshes.</li>
+                  <li>Store normalized risk output, model, provider, audit date, and future authenticated user ID only: no provider key, no raw user secrets.</li>
+                  <li>Server high/blocked audit results must block execution unless the user passes <code>--force-install</code>.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P3</div>
+              <div>
+                <h3>Reduce regex to evidence gathering</h3>
+                <ul>
+                  <li>Use deterministic scans to find files and snippets worth reviewing.</li>
+                  <li>Feed source evidence into the BYOK prompt.</li>
+                  <li>Show source links for manual review whenever npm metadata gives us repository and commit data.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P4</div>
+              <div>
+                <h3>Stabilize the report contract</h3>
+                <ul>
+                  <li>Keep a stable shape for <code>level</code>, <code>score</code>, <code>summary</code>, <code>findings</code>, <code>evidence</code>, <code>sourceUrl</code>, and cache identity.</li>
+                  <li>Use the same contract for CLI, API, future package pages, and future <code>npm-install</code> audits.</li>
+                  <li>Make reports specific enough that a developer can decide without guessing.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P5</div>
+              <div>
+                <h3>Build the package test set</h3>
+                <ul>
+                  <li>Known good: <code>create-next-app</code>, <code>vite</code>, <code>tsx</code>, <code>typescript</code>, <code>shadcn</code>.</li>
+                  <li>Legitimate weird: bundled CLIs, child processes, env reads, generated files.</li>
+                  <li>Suspicious: new packages, low downloads, install scripts, obfuscated bundles, public malicious advisories where usable.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P6</div>
+              <div>
+                <h3>Publish the CLI when the trust flow feels right</h3>
+                <ul>
+                  <li>First public product is not the website. It is: run <code>betternpx</code>/<code>bnpx</code> instead of <code>npx</code>, and <code>betternpm</code>/<code>bnpm</code> instead of <code>npm</code>.</li>
+                  <li>Publish <code>@betternpm/core</code> and <code>@betternpm/cli</code>, exposing <code>betternpm</code>, <code>bnpm</code>, <code>betternpx</code>, and <code>bnpx</code> bins.</li>
+                  <li>Reserve <code>betternpx</code> as the public package name. <code>betternpm</code> and <code>bnpm</code> are already taken, and npm rejected unscoped <code>bnpx</code> as too similar to existing packages, but all three can still be CLI bin aliases from <code>@betternpm/cli</code>.</li>
+                  <li>Add a GitHub-source installer path so <code>curl https://betternpm.org/latest | sh</code> can install/link the CLI before npm publishing is fully polished.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P7</div>
+              <div>
+                <h3>Deploy the same trust layer</h3>
+                <ul>
+                  <li>Deploy <code>apps/api</code> to Cloudflare Workers with D1 migrations applied.</li>
+                  <li>Deploy the public site to Vercel only after external copy is ready, pointing browser audit calls at <code>api.betternpm.org</code>.</li>
+                  <li>Serve the installer script from <code>betternpm.org/latest</code> as a proxy to the GitHub script or release artifact.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="priority">
+              <div class="priority-label">P8</div>
+              <div>
+                <h3>Research <code>npm install</code> only after <code>npx</code> works</h3>
+                <ul>
+                  <li>Resolve and audit dependency graphs.</li>
+                  <li>Inspect install scripts and transitive package risk.</li>
+                  <li>Respect lockfiles and start as a wrapper before pretending to be a package manager replacement.</li>
+                </ul>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="security">
+        <div class="shell">
+          <p class="section-kicker">Security boundaries</p>
+          <h2>The promise is visibility before execution, not magic sandboxing.</h2>
+          <div class="grid">
+            <article class="card">
+              <strong>Never execute inspected tarballs</strong>
+              <p>The inspector downloads packages for analysis only. Execution remains delegated to npm after approval.</p>
+            </article>
+            <article class="card">
+              <strong>Cache by content</strong>
+              <p>Audit records key on target, package name, version, integrity, scanner profile, provider, and model. Name/version alone is not enough.</p>
+            </article>
+            <article class="card">
+              <strong>User keys are request-only</strong>
+              <p>BYOK means the Worker receives a provider key only for cache misses or forced refreshes and stores normalized audit output, model, date, and future user attribution.</p>
+            </article>
+            <article class="card">
+              <strong>Explicit overrides</strong>
+              <p>High or blocked packages require <code>--force-install</code>. Experts can still proceed, but casual execution gets friction.</p>
+            </article>
+            <article class="card">
+              <strong>Known limits</strong>
+              <p>The MVP does not replace npm installs, revoke packages, or fully sandbox executed code.</p>
+            </article>
+            <article class="card">
+              <strong>Scanner profiles</strong>
+              <p>Every deterministic scoring version is named, so caches can be invalidated when the rubric changes.</p>
+            </article>
+          </div>
+          <div class="callout">
+            <p>The product promise stays narrow: safer <code>npx</code>. Better npm audits the exact npm artifact on the server before you run it.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="distribution">
+        <div class="shell split">
+          <div>
+            <p class="section-kicker">Distribution later</p>
+            <h2>The website is not the roadmap.</h2>
+            <p class="section-copy">
+              We will use Vercel for the public site, but only after the product story is crisp. The external page should explain the tool, show a live audit, and drive CLI usage. It should not expose this internal plan.
+            </p>
+          </div>
+          <div class="grid two">
+            <article class="card">
+              <strong>External roadmap</strong>
+              <p>Public roadmap should describe product capabilities, not dates: safer <code>npx</code>, server-verified audits, BYOK review, then install-graph research.</p>
+            </article>
+            <article class="card">
+              <strong>Vercel frontend</strong>
+              <p>Use Vercel for <code>betternpm.org</code>. Point live audit calls to <code>api.betternpm.org</code> on Cloudflare Workers.</p>
+            </article>
+            <article class="card">
+              <strong>Installer route</strong>
+              <p>Serve <code>/latest</code> as an install script endpoint for <code>curl https://betternpm.org/latest | sh</code>, backed by GitHub source or release artifacts.</p>
+            </article>
+            <article class="card">
+              <strong>Launch hook</strong>
+              <p><code>npx</code> is remote code execution with a friendly name. Better npm checks the exact artifact before it runs.</p>
+            </article>
+            <article class="card">
+              <strong>What not to say yet</strong>
+              <p>Do not call it an npm replacement, secure package manager, AI security scanner, or supply-chain solution until the product earns those claims.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell">
+        Better npm internal roadmap. Current date: 2026-06-22. Product status: safer npx trust layer in active development.
+      </div>
+    </footer>
+  </body>
+</html>
