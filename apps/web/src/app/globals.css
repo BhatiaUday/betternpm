@@ -170,9 +170,10 @@ h1 {
   font-size: 13px;
   font-weight: 600;
   gap: 8px;
-  margin-top: 10px;
+  justify-content: center;
+  margin-top: 0;
   padding: 10px 14px;
-  width: fit-content;
+  width: 100%;
 }
 
 .github-button:hover {
@@ -783,6 +784,10 @@ h1 {
 }
 
 /* Package search */
+.search-shell {
+  max-width: 1200px;
+}
+
 .search-panel {
   background: rgba(255, 250, 240, 0.72);
   border: 1px solid var(--line);
@@ -791,6 +796,7 @@ h1 {
 }
 
 .search-settings {
+  align-items: start;
   display: grid;
   gap: 14px;
   grid-template-columns: 1fr 1fr 1fr;
@@ -804,6 +810,16 @@ h1 {
   display: grid;
   gap: 12px;
   margin-top: 20px;
+}
+
+@media (min-width: 880px) {
+  .pkg-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.pkg-card--open {
+  grid-column: 1 / -1;
 }
 
 .pkg-card {
@@ -847,6 +863,20 @@ h1 {
   color: var(--muted);
   font-family: var(--font-mono), monospace;
   font-size: 12px;
+}
+
+.pkg-npm-link {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  gap: 3px;
+  text-transform: uppercase;
+}
+
+.pkg-npm-link:hover {
+  color: var(--blue);
 }
 
 .pkg-desc {

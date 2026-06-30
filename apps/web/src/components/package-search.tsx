@@ -302,14 +302,16 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
 
       <div className="pkg-list">
         {results.map((result) => (
-          <div className="pkg-card" key={result.name}>
+          <div className={`pkg-card${selected === result.name ? " pkg-card--open" : ""}`} key={result.name}>
             <div className="pkg-head">
               <div className="pkg-id">
-                <a href={`https://www.npmjs.com/package/${result.name}`} target="_blank" rel="noreferrer">
+                <a href={`/p/${result.name}`}>
                   <strong>{result.name}</strong>
-                  <ExternalLink size={13} aria-hidden="true" />
                 </a>
                 <span className="pkg-version">{result.version}</span>
+                <a className="pkg-npm-link" href={`https://www.npmjs.com/package/${result.name}`} target="_blank" rel="noreferrer" aria-label="View on npm">
+                  npm <ExternalLink size={11} aria-hidden="true" />
+                </a>
               </div>
               {result.audited && result.audit
                 ? <a className={`risk-badge risk-${result.audit.riskLevel}`} href={`/p/${result.name}/${result.audit.version}`}>{result.audit.riskLevel} {result.audit.score}</a>

@@ -39,7 +39,7 @@ export function AccountControls({ apiUrl }: { apiUrl: string }) {
     <div className="field">
       <label>Leaderboard handle</label>
       <a className="github-button" href={`${api}/v1/auth/github/start`}>
-        <GithubMark size={15} /> Sign in with GitHub to claim your handle
+        <GithubMark size={15} /> Sign in with GitHub
       </a>
       <p className="field-hint">
         Audits are credited to your verified GitHub username — handles can&apos;t be set

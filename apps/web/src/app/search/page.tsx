@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function SearchPage() {
   return (
-    <main className="audit-shell">
+    <main className="audit-shell search-shell">
       <header className="audit-masthead">
         <p className="kicker">npm, but safer</p>
         <h1 className="audit-title">Search npm packages</h1>
