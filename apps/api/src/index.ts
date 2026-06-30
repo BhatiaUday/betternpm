@@ -12,6 +12,8 @@ import { defaultModelFor, runProviderAudit } from "./provider-audit.js";
 import { createWorkspace } from "./workspace.js";
 import { estimateCostUsd } from "./pricing.js";
 import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, sanitizeUsername, searchAudits } from "./leaderboard.js";
+import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, readGithubConfig, readStateCookie, signSession, stateCookie, verifySession } from "./auth.js";
+import { isClaimedLogin, upsertAccount } from "./accounts.js";
 import { SCANNER_PROFILE_VERSION, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type OsvVulnerability, type PackageFacts, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
 
 interface AuditQueueMessage {
@@ -33,6 +35,11 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
   API_RATE_LIMITER?: RateLimitBinding;
   AUDIT_RATE_LIMITER?: RateLimitBinding;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  SESSION_SIGNING_SECRET?: string;
+  WEB_APP_URL?: string;
+  API_BASE_URL?: string;
 }
 
 // Minimal shape of the Cloudflare Rate Limiting binding. Declared locally so the
@@ -52,10 +59,12 @@ interface AuditRequest {
   includeOsv?: boolean;
   forceRefresh?: boolean;
   username?: string;
+  sessionToken?: string;
 }
 
 const jsonHeaders = {
-  "content-type": "application/json; charset=utf-8"
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store"
 };
 
 const defaultAllowedOrigins = new Set([
@@ -139,7 +148,8 @@ export default {
           packageSummary: "/v1/packages/:package/:version/summary",
           leaderboard: "/v1/leaderboard",
           search: "/v1/search?q=",
-          registrySearch: "/v1/registry-search?q="
+          registrySearch: "/v1/registry-search?q=",
+          githubLogin: "/v1/auth/github/start"
         }
       }, 200, request, env);
     }
@@ -192,6 +202,18 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/v1/registry-search") {
       return getRegistrySearch(request, env, url);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/auth/github/start") {
+      return authGithubStart(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/auth/github/callback") {
+      return authGithubCallback(request, env, url);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/auth/me") {
+      return authMe(request, env);
     }
 
     return json({ error: "Not found" }, 404, request, env);
@@ -362,7 +384,19 @@ async function createAuditRequest(request: Request, env: Env): Promise<Response>
     return json({ error: "Queued audits require provider anthropic or openai." }, 400, request, env);
   }
 
-  const username = sanitizeUsername(body.username);
+  const session = await resolveSession(request, env, body.sessionToken);
+  let username: string | undefined;
+
+  if (session) {
+    username = session.login;
+  } else {
+    username = sanitizeUsername(body.username);
+
+    if (username && await isClaimedLogin(env.DB, username)) {
+      return json({ error: `The handle "${username}" is claimed by a GitHub user. Sign in with GitHub to use it.` }, 409, request, env);
+    }
+  }
+
   const requestIp = clientIp(request);
   const model = body.model ?? defaultModelFor(provider);
   const requestedVersion = body.version ?? "latest";
@@ -576,6 +610,81 @@ async function recordLeaderboardUsage(
   }
 }
 
+async function authGithubStart(request: Request, env: Env): Promise<Response> {
+  const config = readGithubConfig(env);
+
+  if (!config) {
+    return json({ error: "GitHub login is not configured on this server." }, 503, request, env);
+  }
+
+  const state = crypto.randomUUID();
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: buildAuthorizeUrl(config, state),
+      "set-cookie": stateCookie(state),
+      "cache-control": "no-store"
+    }
+  });
+}
+
+async function authGithubCallback(request: Request, env: Env, url: URL): Promise<Response> {
+  const config = readGithubConfig(env);
+
+  if (!config) {
+    return json({ error: "GitHub login is not configured on this server." }, 503, request, env);
+  }
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const cookieState = readStateCookie(request);
+
+  if (!code || !state || !cookieState || state !== cookieState) {
+    return redirectToWebAuth(config.webAppUrl, "error=auth_failed&message=Sign-in could not be verified. Please try again.");
+  }
+
+  try {
+    const accessToken = await exchangeCodeForToken(config, code);
+    const user = await fetchGithubUser(accessToken);
+    await upsertAccount(env.DB, { githubId: user.id, login: user.login, avatarUrl: user.avatarUrl, now: new Date().toISOString() });
+    const token = await signSession(config.sessionSecret, user);
+    return redirectToWebAuth(config.webAppUrl, `token=${encodeURIComponent(token)}&login=${encodeURIComponent(user.login)}`);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "github_oauth_failed", error: errorMessage(error) }));
+    return redirectToWebAuth(config.webAppUrl, "error=auth_failed&message=GitHub sign-in failed. Please try again.");
+  }
+}
+
+function redirectToWebAuth(webAppUrl: string, fragment: string): Response {
+  const target = new URL(`${webAppUrl}/auth/callback`);
+  target.hash = fragment;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: target.toString(),
+      "set-cookie": clearStateCookie(),
+      "cache-control": "no-store"
+    }
+  });
+}
+
+async function authMe(request: Request, env: Env): Promise<Response> {
+  const session = await resolveSession(request, env);
+  return json({ authenticated: Boolean(session), login: session?.login ?? null }, 200, request, env);
+}
+
+async function resolveSession(request: Request, env: Env, bodyToken?: string): Promise<{ login: string } | undefined> {
+  const config = readGithubConfig(env);
+
+  if (!config) {
+    return undefined;
+  }
+
+  const claims = await verifySession(config.sessionSecret, bearerToken(request) ?? bodyToken);
+  return claims ? { login: claims.login } : undefined;
+}
+
 async function getLeaderboard(request: Request, env: Env, url: URL): Promise<Response> {
   const limit = clampLimit(url.searchParams.get("limit"), 25, 100);
   const leaderboard = await readLeaderboard(env.DB, limit);
@@ -678,7 +787,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("origin");
   const headers: Record<string, string> = {
     "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": "content-type, authorization",
     "access-control-max-age": "86400",
     "vary": "Origin"
   };

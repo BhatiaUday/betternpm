@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Search, Trophy } from "lucide-react";
+import { Loader2, Search, ShieldCheck, Trophy } from "lucide-react";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "https://api.betternpm.org").replace(/\/$/, "");
 
@@ -10,6 +10,7 @@ interface LeaderboardEntry {
   username: string;
   totalCostUsd: number;
   totalAudits: number;
+  verified: boolean;
 }
 
 interface SearchResult {
@@ -113,7 +114,7 @@ export default function LeaderboardPage() {
                     {entries.map((entry) => (
                       <tr key={entry.username}>
                         <td className="rank">{entry.rank}</td>
-                        <td>{entry.username}</td>
+                        <td>{entry.username}{entry.verified && <ShieldCheck className="lb-verified" size={14} aria-label="verified" />}</td>
                         <td>{entry.totalAudits}</td>
                         <td>${entry.totalCostUsd.toFixed(4)}</td>
                       </tr>

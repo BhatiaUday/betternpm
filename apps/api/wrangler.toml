@@ -5,6 +5,18 @@ workers_dev = true
 
 routes = [{ pattern = "api.betternpm.org", custom_domain = true }]
 
+[vars]
+WEB_APP_URL = "https://www.betternpm.org"
+API_BASE_URL = "https://api.betternpm.org"
+# GITHUB_CLIENT_ID is public — set it here after creating the GitHub OAuth App:
+# GITHUB_CLIENT_ID = "Iv1.xxxxxxxxxxxx"
+#
+# Secrets (set via `wrangler secret put <NAME>`, never commit them):
+#   GITHUB_CLIENT_SECRET    — the GitHub OAuth App client secret
+#   SESSION_SIGNING_SECRET  — a random 32+ char string (e.g. `openssl rand -hex 32`)
+# Until GITHUB_CLIENT_ID + both secrets are set, GitHub login is disabled and the
+# rest of the API works unchanged.
+
 [[d1_databases]]
 binding = "DB"
 database_name = "betternpm-audits"

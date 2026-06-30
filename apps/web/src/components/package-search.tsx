@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { ChevronDown, ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useBrowserSettings, type Provider } from "../lib/browser-settings";
 import { loadBinMap } from "../lib/npm-detect";
+import { AccountControls } from "./account-controls";
 
 type RiskLevel = "low" | "medium" | "high" | "blocked";
 
@@ -33,7 +34,7 @@ const POLL_TIMEOUT_MS = 150_000;
 
 export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const endpoint = apiUrl.replace(/\/$/, "");
-  const { settings, setProvider, setUsername, setKey } = useBrowserSettings();
+  const { settings, setProvider, setKey } = useBrowserSettings();
   const apiKey = settings.keys[settings.provider];
 
   const [query, setQuery] = useState("");
@@ -120,16 +121,21 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
     setProgress("Submitting audit request…");
 
     try {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (settings.session) {
+        headers.authorization = `Bearer ${settings.session.token}`;
+      }
+
       const response = await fetch(`${endpoint}/v1/audit-requests`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({
           target,
           packageName: selected,
           version: version || "latest",
           provider: settings.provider,
           apiKey: apiKey.trim(),
-          username: settings.username.trim() || undefined
+          username: settings.session ? undefined : (settings.username.trim() || undefined)
         })
       });
 
@@ -165,7 +171,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       setProgress(undefined);
       setQueueError(caught instanceof Error ? caught.message : "The audit failed.");
     }
-  }, [endpoint, selected, version, binByVersion, apiKey, settings.provider, settings.username]);
+  }, [endpoint, selected, version, binByVersion, apiKey, settings.provider, settings.username, settings.session]);
 
   const busy = queueStatus === "loading" || queueStatus === "running";
 
@@ -214,19 +220,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
                 <option value="openai">OpenAI (GPT)</option>
               </select>
             </div>
-            <div className="field">
-              <label htmlFor="ps-username">Leaderboard handle</label>
-              <input
-                id="ps-username"
-                className="text-input"
-                placeholder="your-handle (optional)"
-                value={settings.username}
-                onChange={(event) => setUsername(event.target.value)}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-              />
-            </div>
+            <AccountControls apiUrl={endpoint} idPrefix="ps" />
             <div className="field">
               <label htmlFor="ps-key">{settings.provider === "anthropic" ? "Anthropic" : "OpenAI"} API key</label>
               <div className="input-row">

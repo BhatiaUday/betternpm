@@ -3,6 +3,7 @@ export interface LeaderboardEntry {
   username: string;
   totalCostUsd: number;
   totalAudits: number;
+  verified: boolean;
 }
 
 export interface AuditSearchResult {
@@ -45,17 +46,20 @@ export async function incrementLeaderboard(db: D1Database, input: {
 
 export async function readLeaderboard(db: D1Database, limit: number): Promise<LeaderboardEntry[]> {
   const result = await db.prepare(`
-    SELECT username, total_cost_usd, total_audits
-    FROM leaderboard
-    ORDER BY total_cost_usd DESC, total_audits DESC
+    SELECT l.username, l.total_cost_usd, l.total_audits,
+      CASE WHEN a.login IS NULL THEN 0 ELSE 1 END AS verified
+    FROM leaderboard l
+    LEFT JOIN accounts a ON a.login = l.username
+    ORDER BY l.total_cost_usd DESC, l.total_audits DESC
     LIMIT ?
-  `).bind(limit).all<{ username: string; total_cost_usd: number; total_audits: number }>();
+  `).bind(limit).all<{ username: string; total_cost_usd: number; total_audits: number; verified: number }>();
 
   return (result.results ?? []).map((row, index) => ({
     rank: index + 1,
     username: row.username,
     totalCostUsd: row.total_cost_usd,
-    totalAudits: row.total_audits
+    totalAudits: row.total_audits,
+    verified: row.verified === 1
   }));
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, Play, Search, ShieldCheck } from "lucide-react";
 import { useBrowserSettings, type Provider } from "../lib/browser-settings";
 import { loadBinMap } from "../lib/npm-detect";
+import { AccountControls } from "./account-controls";
 
 type RiskLevel = "low" | "medium" | "high" | "blocked";
 type Severity = RiskLevel | "info";
@@ -78,7 +79,7 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
   const [resolvedName, setResolvedName] = useState<string>();
   const [versions, setVersions] = useState<string[]>([]);
   const [version, setVersion] = useState("");
-  const { settings, setProvider, setUsername, setKey } = useBrowserSettings();
+  const { settings, setProvider, setKey } = useBrowserSettings();
   const provider = settings.provider;
   const apiKey = settings.keys[provider];
   const username = settings.username;
@@ -144,16 +145,21 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
     setProgress("Submitting audit request…");
 
     try {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (settings.session) {
+        headers.authorization = `Bearer ${settings.session.token}`;
+      }
+
       const response = await fetch(`${endpoint}/v1/audit-requests`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({
           target,
           packageName: name,
           version: version || "latest",
           provider,
           apiKey: apiKey.trim(),
-          username: username.trim() || undefined
+          username: settings.session ? undefined : (username.trim() || undefined)
         })
       });
 
@@ -185,7 +191,7 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
       setProgress(undefined);
       setError(caught instanceof Error ? caught.message : "The audit failed.");
     }
-  }, [endpoint, resolvedName, packageInput, apiKey, username, target, version, provider]);
+  }, [endpoint, resolvedName, packageInput, apiKey, username, target, version, provider, settings.session]);
 
   // Identify the command automatically: a package with no bin is a library you can
   // only `npm install`; one that ships a bin is what you'd `npx`. Manual picks win.
@@ -304,20 +310,7 @@ export function AuditConsole({ apiUrl }: { apiUrl: string }) {
           </p>
         </div>
 
-        <div className="field">
-          <label htmlFor="audit-username">Leaderboard handle (optional)</label>
-          <input
-            id="audit-username"
-            className="text-input"
-            placeholder="your-handle"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-          <p className="field-hint">Saved in this browser. Set it to appear on the <a href="/leaderboard">leaderboard</a> for audits you run here.</p>
-        </div>
+        <AccountControls apiUrl={endpoint} idPrefix="audit" />
 
         <button type="button" className="run-button" onClick={() => void runAudit()} disabled={busy}>
           {busy ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}

@@ -53,3 +53,13 @@ CREATE TABLE IF NOT EXISTS leaderboard (
 
 CREATE INDEX IF NOT EXISTS leaderboard_rank_idx
   ON leaderboard (total_cost_usd DESC, total_audits DESC);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  github_id INTEGER PRIMARY KEY,
+  login TEXT NOT NULL UNIQUE,
+  avatar_url TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS accounts_login_idx ON accounts (login);
