@@ -11,3 +11,5 @@ coverage/
 .vercel/
 .wrangler/
 out/
+.vercel
+.env*.local

@@ -1,6 +1,6 @@
 {
   "name": "betternpm-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "Better npm CLI for npm/npx replacement commands backed by package inspection.",
   "license": "MIT",

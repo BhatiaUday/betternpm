@@ -42,13 +42,22 @@ const SYSTEM = [
   "vulnerabilities, a static source scan, and a typosquat signal. Be evidence-based",
   "and concise.",
   "",
+  "Calibration:",
+  "- Minified/bundled distribution code is NORMAL for npm packages and is NOT by",
+  "  itself evidence of malice. Obfuscation flags on a well-known package's minified",
+  "  build are usually false positives; only treat them as risk when paired with a",
+  "  concrete malicious behavior (credential theft, data exfiltration, install-time",
+  "  execution, dynamic remote code).",
+  "- Popularity, a public repository, and a long release history lower likelihood",
+  "  of active compromise but do not excuse actual malicious code.",
+  "- Known OSV vulnerabilities or malicious install scripts imply high or blocked.",
+  "",
   "Reply with ONLY a JSON object (no prose, no markdown fences):",
   '{"riskLevel":"low|medium|high|blocked","score":0-100,"confidence":"low|medium|high",',
   '"summary":"one or two sentences","findings":[{"severity":"info|low|medium|high|blocked",',
   '"code":"short-kebab-code","title":"short title","detail":"optional detail"}]}',
   "",
-  "Scoring: 100 = clearly safe, 0 = clearly malicious. Known OSV vulnerabilities or",
-  "malicious install scripts imply high or blocked."
+  "Scoring: 100 = clearly safe, 0 = clearly malicious."
 ].join("\n");
 
 function evidenceFor(inspection) {

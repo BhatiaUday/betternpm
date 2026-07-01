@@ -1,8 +1,58 @@
-# Better npm
+# betternpm
 
-Better npm starts as a trust layer over npm tooling: inspect the package you are about to execute, show concrete risk signals, then delegate to the normal npm ecosystem when you approve.
+**`npx` runs code before you can read it. `betternpx` reads it first.**
 
-The first implementation splits command names by intent: `betternpx`/`bnpx` replace `npx`, while `betternpm`/`bnpm` replace `npm` as a drop-in passthrough first. Full package/install inspection is the next inspector build.
+betternpm is a trust layer over npm: it inspects the package you are about to run or
+install — typosquats, install scripts, known vulnerabilities, suspicious source — shows
+you the evidence, and only then hands off to the normal npm ecosystem.
+
+```bash
+npm i -g betternpm-cli
+
+betternpx cowsay hello          # inspect, then run (npx replacement)
+betternpm install left-pad      # inspect, then install (npm replacement)
+betternpm inspect create-next-app --json   # machine-readable, for agents
+betternpm setup                 # optional: AI audits + GitHub sign-in
+```
+
+Everything works with **no account and no API key**. Try it in the browser at
+[betternpm.org/search](https://www.betternpm.org/search).
+
+## What it checks (free, before anything executes)
+
+| Check | How |
+| --- | --- |
+| Known vulnerabilities | [OSV.dev](https://osv.dev) query for the exact version — hits **block** execution |
+| Typosquats | Edit distance + homoglyph normalization (`l0dash`, `rеact`) against ~200 popular names |
+| Install scripts | `preinstall` / `install` / `postinstall` flagged high — the #1 supply-chain vector |
+| Source scan | Tarball downloaded (integrity-verified), scanned for credential access, env harvesting, `child_process`, `eval`, network calls, obfuscation |
+| Metadata | Version age, weekly downloads, missing repo/license, optional direct-dependency audit |
+
+The inspected tarball is **never executed**. Execution is delegated to `npm exec` /
+`npm install` only after you approve; high-risk or vulnerable packages require
+`--force-install`.
+
+## AI audits (optional, bring your own key)
+
+Add an Anthropic or OpenAI key (`betternpm login anthropic`) and betternpm runs a deep
+agentic audit on the server: the model explores the actual tarball with read-only tools and
+returns a scored verdict with evidence. Results are cached publicly by exact
+`package@version+integrity`, so one person's audit benefits everyone — browse them at
+[betternpm.org/search](https://www.betternpm.org/search). Sign in with GitHub
+(`betternpm login github`) to get credited on the [leaderboard](https://www.betternpm.org/leaderboard).
+
+Your key is sent only to run your audit and is never stored.
+
+## What it does NOT do (yet)
+
+No tool catches everything, and pretending otherwise is how trust dies:
+
+- Novel, well-hidden malware can evade both heuristics and AI review.
+- Only the target package (and optionally direct deps) is inspected — not the full tree.
+- Analysis is static; runtime-only behavior (time bombs, C2 triggers) can pass.
+- AI verdicts can be wrong in both directions — findings link to evidence so you can judge.
+
+Full details: [betternpm.org/security](https://www.betternpm.org/security).
 
 ## Current MVP
 
@@ -14,6 +64,7 @@ The first implementation splits command names by intent: `betternpx`/`bnpx` repl
 - Execute through `npm exec` only after approval.
 - Provide `--json` output for agents and automation.
 - Pass ordinary `betternpm`/`bnpm` commands through to `npm`, while inspecting direct registry package specs for `install`/`i`/`add` before npm runs.
+- Queue server-side BYOK AI audits with shared public caching, GitHub-verified attribution, and a community leaderboard.
 
 ## Local Development
 
@@ -49,16 +100,17 @@ betternpm inspect create-next-app
 
 ## Direct install from GitHub source
 
-Before npm publishing is polished, the installer can build and link the CLI directly from GitHub source:
+The npm package is the recommended install (`npm i -g betternpm-cli`). Alternatively, the
+installer builds and links the CLI directly from GitHub source:
 
 ```bash
 curl -fsSL https://betternpm.org/latest | sh
 ```
 
-Until `betternpm.org/latest` is wired up, run the script directly from a checked-out repo:
+To run the installer from a checked-out repo instead:
 
 ```bash
-BETTERNPM_REPO=udaybhatia/betternpm BETTERNPM_REF=main ./scripts/install.sh
+BETTERNPM_REPO=BhatiaUday/betternpm BETTERNPM_REF=main ./scripts/install.sh
 ```
 
 The installer requires Node.js 20+, npm, curl, and tar. It installs the global bins `betternpm`, `bnpm`, `betternpx`, and `bnpx` using `npm link`. Use `betternpx`/`bnpx` where you would use `npx`, and `betternpm`/`bnpm` where you would use `npm`.

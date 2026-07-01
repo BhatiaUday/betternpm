@@ -237,6 +237,26 @@ export function renderSetupIntro(): string {
   ].join("\n");
 }
 
+// First-run explainer: what each tier gets you, so "no key" is an informed choice
+// rather than a silent degradation.
+export function renderTierExplainer(commandName = "betternpm"): string {
+  return [
+    "",
+    `Welcome to ${commandName} — inspect npm packages before they run.`,
+    "",
+    "What you get:",
+    "  Free, no key      Full local inspection on every install/run: OSV known",
+    "                    vulnerabilities, typosquat detection, install-script and",
+    "                    source-scan findings — plus shared community AI audits",
+    "                    when one is already cached.",
+    "  + GitHub sign-in  Your audits are credited to your verified handle on the",
+    "                    public leaderboard.",
+    "  + your own AI key Deep agentic AI audit (Anthropic or OpenAI, you pay the",
+    "                    provider directly) for packages nobody has audited yet.",
+    ""
+  ].join("\n");
+}
+
 export function renderSetupDone(commandName = "betternpm"): string {
   return [
     "",

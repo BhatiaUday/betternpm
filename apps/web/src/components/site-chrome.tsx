@@ -7,6 +7,7 @@ export function SiteHeader() {
       <nav className="site-nav" aria-label="Primary">
         <Link href="/search">Search</Link>
         <Link href="/leaderboard">Leaderboard</Link>
+        <Link href="/security">Security</Link>
         <a href="https://github.com/sponsors/BhatiaUday" rel="noreferrer" target="_blank">Sponsor</a>
       </nav>
     </header>
@@ -18,7 +19,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <p>
         Bring your own key — it is sent only to run your audit and is never stored. Audit results are cached
-        and shared publicly. Request IPs are logged.
+        and shared publicly. Request IPs are logged. Read the <Link href="/security">security model</Link>.
       </p>
     </footer>
   );

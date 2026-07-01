@@ -67,6 +67,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const [selected, setSelected] = useState<string>();
   const [versions, setVersions] = useState<string[]>([]);
   const [version, setVersion] = useState("");
+  const [auditedVersion, setAuditedVersion] = useState<string>();
   const [binByVersion, setBinByVersion] = useState<Record<string, boolean>>({});
   const [queueStatus, setQueueStatus] = useState<"idle" | "loading" | "running" | "error">("idle");
   const [progress, setProgress] = useState<string>();
@@ -127,10 +128,11 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openAudit = useCallback(async (name: string) => {
+  const openAudit = useCallback(async (name: string, existingAuditVersion?: string) => {
     setSelected(name);
     setVersions([]);
     setVersion("");
+    setAuditedVersion(existingAuditVersion);
     setBinByVersion({});
     setQueueStatus("idle");
     setProgress(undefined);
@@ -184,7 +186,9 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
           packageName: selected,
           version: version || "latest",
           provider: settings.provider,
-          apiKey: apiKey.trim()
+          apiKey: apiKey.trim(),
+          // Re-auditing an already-audited version must bypass the cache and run fresh.
+          forceRefresh: Boolean(auditedVersion) && version === auditedVersion
         })
       });
 
@@ -220,7 +224,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
       setProgress(undefined);
       setQueueError(caught instanceof Error ? caught.message : "The audit failed.");
     }
-  }, [endpoint, selected, version, binByVersion, apiKey, settings.provider, settings.session]);
+  }, [endpoint, selected, version, auditedVersion, binByVersion, apiKey, settings.provider, settings.session]);
 
   const busy = queueStatus === "loading" || queueStatus === "running";
 
@@ -329,7 +333,7 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
               <button
                 type="button"
                 className="link-button"
-                onClick={() => (selected === result.name ? setSelected(undefined) : void openAudit(result.name))}
+                onClick={() => (selected === result.name ? setSelected(undefined) : void openAudit(result.name, result.audit?.version))}
               >
                 {selected === result.name ? "Close" : result.audited ? "Re-audit" : "Audit"}
               </button>

@@ -11,9 +11,9 @@ import { runNpmExec, runNpmPassthrough } from "./exec.js";
 import { parseNpmInstallInspectionPlan, type NpmInstallInspectionPlan } from "./npm-command.js";
 import { estimateAuditCost, formatCostRange } from "./pricing.js";
 import { runServerAudit, type ServerAuditResult, type ServerAuditUnavailableReason } from "./server-audit.js";
-import { confirmAuditCharge, confirmExecution, getBlockingReason, getServerAuditBlockingReason, promptLine, renderHelp, renderInspection, renderServerAudit, renderSetupDone, renderSetupIntro, renderStaticOnlyWarning } from "./ui.js";
+import { confirmAuditCharge, confirmExecution, getBlockingReason, getServerAuditBlockingReason, promptLine, renderHelp, renderInspection, renderServerAudit, renderSetupDone, renderSetupIntro, renderStaticOnlyWarning, renderTierExplainer } from "./ui.js";
 
-const CLI_VERSION = "0.0.1";
+const CLI_VERSION = "0.0.2";
 
 async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   const commandName = inferInvokedCommandName();
@@ -30,7 +30,7 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
     return handleWhoamiCommand();
   }
 
-  maybeShowFirstRunHint(commandName, argv);
+  await maybeOfferFirstRunSetup(commandName, argv);
 
   if (isNpmReplacementCommand(commandName) && !isBetterNpmInspectCommand(argv)) {
     const npmInstallPlan = parseNpmInstallInspectionPlan(argv);
@@ -343,19 +343,41 @@ async function handleSetupCommand(commandName: string): Promise<number> {
   return 0;
 }
 
-function maybeShowFirstRunHint(commandName: string, argv: string[]): void {
-  if (!process.stdin.isTTY || existsSync(configPath())) {
+// On the very first interactive run (no config file yet), explain the tiers and
+// offer the setup wizard inline. Declining writes the default config so the offer
+// never repeats; either way the requested command continues afterwards. This runs
+// on first use — deliberately NOT in a postinstall script, which we ourselves
+// flag as a supply-chain risk.
+async function maybeOfferFirstRunSetup(commandName: string, argv: string[]): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY || existsSync(configPath())) {
     return;
   }
 
   const first = argv[0] ?? "";
-  const skip = first === "config" || argv.includes("--help") || argv.includes("-h") || argv.includes("--version") || argv.includes("-v");
+  const quiet = first === "config" || argv.length === 0 || argv.includes("--help") || argv.includes("-h") || argv.includes("--version") || argv.includes("-v");
 
-  if (skip) {
+  if (quiet) {
     return;
   }
 
-  console.error(`Tip: first time? Run \`${commandName} setup\` to configure audits and sign in.\n`);
+  if (argv.includes("--json") || argv.includes("--yes") || argv.includes("-y")) {
+    // Machine/automation modes: stay out of the way, just leave a tip on stderr.
+    console.error(`Tip: first time? Run \`${commandName} setup\` to configure audits and sign in.\n`);
+    return;
+  }
+
+  console.log(renderTierExplainer(commandName));
+  const answer = (await promptLine("Set up now? Takes ~30 seconds. [Y/n]: ")).toLowerCase();
+
+  if (answer === "" || answer === "y" || answer === "yes") {
+    await handleSetupCommand(commandName);
+    console.log(`Continuing with: ${commandName} ${argv.join(" ")}\n`);
+    return;
+  }
+
+  // Persist defaults so the offer only ever shows once.
+  await writeConfig(await readConfig());
+  console.log(`Skipped — run \`${commandName} setup\` anytime.\n`);
 }
 
 async function handleLoginCommand(providerArg: string | undefined, config: BetterNpxConfig): Promise<number> {
