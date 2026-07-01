@@ -40,6 +40,8 @@ export interface Env {
   SESSION_SIGNING_SECRET?: string;
   GITHUB_MODELS_TOKEN?: string;
   INGEST_TOKEN?: string;
+  OPENAI_BASE_URL?: string;
+  ANTHROPIC_BASE_URL?: string;
   WEB_APP_URL?: string;
   API_BASE_URL?: string;
 }
@@ -705,7 +707,9 @@ async function runAudit(input: {
         apiKey: input.apiKey,
         target: input.target,
         facts,
-        workspace
+        workspace,
+        openaiBaseUrl: env.OPENAI_BASE_URL,
+        anthropicBaseUrl: env.ANTHROPIC_BASE_URL
       });
   const risk = floorRisk(providerRisk.risk, facts);
   const auditedAt = new Date().toISOString();

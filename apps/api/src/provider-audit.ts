@@ -45,23 +45,13 @@ export function defaultModelFor(provider: AuditProvider): string {
   }
 }
 
-// OpenAI-compatible chat-completions endpoints. GitHub Models speaks the same API,
-// so the OpenAI agent is reused with a different base URL + auth. GitHub Models does
-// not accept `reasoning_effort` and caps free-tier tokens (8k in / 4k out).
-interface OpenAiEndpoint {
-  baseUrl: string;
-  reasoning: boolean;
-  maxTokens?: number;
-  accept?: string;
-}
-
-const OPENAI_ENDPOINT: OpenAiEndpoint = { baseUrl: "https://api.openai.com/v1", reasoning: true };
-const GITHUB_MODELS_ENDPOINT: OpenAiEndpoint = {
-  baseUrl: "https://models.github.ai/inference",
-  reasoning: false,
-  maxTokens: 4000,
-  accept: "application/vnd.github+json"
-};
+// Default provider API base URLs. Overridable per request (env OPENAI_BASE_URL /
+// ANTHROPIC_BASE_URL) so an operator can route audits through a self-hosted,
+// path-transparent proxy that forwards /v1/responses and /v1/messages under its own
+// auth. Not a public feature — set only in the platform's own environment.
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
+const OPENAI_MAX_OUTPUT_TOKENS = 32_000;
 
 export async function runProviderAudit(input: {
   provider: Exclude<AuditProvider, "local">;
@@ -70,17 +60,15 @@ export async function runProviderAudit(input: {
   target: AuditTargetKind;
   facts: PackageFacts;
   workspace: PackageWorkspace;
+  openaiBaseUrl?: string;
+  anthropicBaseUrl?: string;
 }): Promise<ProviderAuditReport> {
   const system = buildSystemPrompt(input.target);
   const initialUser = buildInitialUserMessage(input.facts, input.workspace, input.target);
 
-  let run: AgentRun;
-  if (input.provider === "anthropic") {
-    run = await runAnthropicAgent(input.model, input.apiKey, system, initialUser, input.workspace);
-  } else {
-    const endpoint = input.provider === "github" ? GITHUB_MODELS_ENDPOINT : OPENAI_ENDPOINT;
-    run = await runOpenAiAgent(input.model, input.apiKey, system, initialUser, input.workspace, endpoint);
-  }
+  const run = input.provider === "anthropic"
+    ? await runAnthropicAgent(input.model, input.apiKey, system, initialUser, input.workspace, input.anthropicBaseUrl ?? DEFAULT_ANTHROPIC_BASE_URL)
+    : await runResponsesAgent(input.model, input.apiKey, system, initialUser, input.workspace, input.openaiBaseUrl ?? DEFAULT_OPENAI_BASE_URL);
 
   return normalizeReport(run.verdict, run.usage);
 }
@@ -289,7 +277,8 @@ async function runAnthropicAgent(
   apiKey: string,
   system: string,
   initialUser: string,
-  workspace: PackageWorkspace
+  workspace: PackageWorkspace,
+  baseUrl: string
 ): Promise<AgentRun> {
   const tools = AUDIT_TOOLS.map((tool) => ({
     name: tool.name,
@@ -300,7 +289,7 @@ async function runAnthropicAgent(
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const data = await anthropicRequest(model, apiKey, system, tools, messages);
+    const data = await anthropicRequest(model, apiKey, system, tools, messages, baseUrl);
     addAnthropicUsage(usage, data.usage);
     const content = Array.isArray(data.content) ? data.content : [];
     messages.push({ role: "assistant", content });
@@ -339,7 +328,7 @@ async function runAnthropicAgent(
   }
 
   messages.push({ role: "user", content: FINAL_INSTRUCTION });
-  const data = await anthropicRequest(model, apiKey, system, undefined, messages);
+  const data = await anthropicRequest(model, apiKey, system, undefined, messages, baseUrl);
   addAnthropicUsage(usage, data.usage);
   const text = (data.content ?? []).filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n");
   return { verdict: parseVerdictText(text), usage };
@@ -355,9 +344,10 @@ async function anthropicRequest(
   apiKey: string,
   system: string,
   tools: Array<{ name: string; description: string; input_schema: unknown }> | undefined,
-  messages: AnthropicMessage[]
+  messages: AnthropicMessage[],
+  baseUrl: string
 ): Promise<AnthropicResponse> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch(`${baseUrl}/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -382,69 +372,73 @@ async function anthropicRequest(
   return response.json<AnthropicResponse>();
 }
 
-interface OpenAiToolCall {
-  id?: string;
+interface ResponsesOutputContent {
   type?: string;
-  function?: { name?: string; arguments?: string };
+  text?: string;
 }
 
-interface OpenAiMessage {
-  role: string;
-  content?: string | null;
-  tool_calls?: OpenAiToolCall[];
-  tool_call_id?: string;
+interface ResponsesOutputItem {
+  type?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  content?: ResponsesOutputContent[];
 }
 
-async function runOpenAiAgent(
+interface ResponsesResult {
+  output: ResponsesOutputItem[];
+  outputText: string;
+  usage: TokenUsage;
+}
+
+// OpenAI GPT-5 / o-series models use the Responses API (/v1/responses), not chat
+// completions. Agentic loop: send input items, execute any function_call items,
+// feed function_call_output back, and carry the model's output items forward for
+// stateless multi-turn (store:false + encrypted reasoning).
+async function runResponsesAgent(
   model: string,
   apiKey: string,
   system: string,
   initialUser: string,
   workspace: PackageWorkspace,
-  endpoint: OpenAiEndpoint
+  baseUrl: string
 ): Promise<AgentRun> {
   const tools = AUDIT_TOOLS.map((tool) => ({
     type: "function" as const,
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.schema
-    }
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.schema
   }));
-  const messages: OpenAiMessage[] = [
-    { role: "system", content: system },
-    { role: "user", content: initialUser }
-  ];
+  const input: unknown[] = [{ role: "user", content: initialUser }];
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const result = await openAiRequest(model, apiKey, tools, messages, endpoint);
+    const result = await responsesRequest(model, apiKey, system, tools, input, baseUrl);
     addUsage(usage, result.usage);
-    const message = result.message;
-    const toolCalls = message.tool_calls ?? [];
-    messages.push({
-      role: "assistant",
-      content: message.content ?? "",
-      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
-    });
 
-    if (toolCalls.length === 0) {
-      return { verdict: parseVerdictText(message.content ?? ""), usage };
+    for (const item of result.output) {
+      input.push(item);
+    }
+
+    const functionCalls = result.output.filter((item) => item?.type === "function_call");
+
+    if (functionCalls.length === 0) {
+      return { verdict: parseVerdictText(result.outputText), usage };
     }
 
     let verdict: RawVerdict | undefined;
 
-    for (const call of toolCalls) {
-      const name = call.function?.name ?? "";
-      const args = safeParseJson(call.function?.arguments);
+    for (const call of functionCalls) {
+      const name = call.name ?? "";
+      const args = safeParseJson(call.arguments);
 
       if (name === "submit_audit") {
         verdict = asRecord(args) as RawVerdict;
-        messages.push({ role: "tool", tool_call_id: call.id ?? "", content: "Audit recorded." });
+        input.push({ type: "function_call_output", call_id: call.call_id ?? "", output: "Audit recorded." });
         continue;
       }
 
-      messages.push({ role: "tool", tool_call_id: call.id ?? "", content: executeTool(workspace, name, args) });
+      input.push({ type: "function_call_output", call_id: call.call_id ?? "", output: executeTool(workspace, name, args) });
     }
 
     if (verdict) {
@@ -452,10 +446,10 @@ async function runOpenAiAgent(
     }
   }
 
-  messages.push({ role: "user", content: FINAL_INSTRUCTION });
-  const result = await openAiRequest(model, apiKey, undefined, messages, endpoint, { responseFormatJson: true });
+  input.push({ role: "user", content: FINAL_INSTRUCTION });
+  const result = await responsesRequest(model, apiKey, system, undefined, input, baseUrl);
   addUsage(usage, result.usage);
-  return { verdict: parseVerdictText(result.message.content ?? ""), usage };
+  return { verdict: parseVerdictText(result.outputText), usage };
 }
 
 function addUsage(usage: TokenUsage, reported: TokenUsage): void {
@@ -463,67 +457,62 @@ function addUsage(usage: TokenUsage, reported: TokenUsage): void {
   usage.outputTokens += reported.outputTokens;
 }
 
-async function openAiRequest(
+async function responsesRequest(
   model: string,
   apiKey: string,
-  tools: Array<{ type: "function"; function: { name: string; description: string; parameters: unknown } }> | undefined,
-  messages: OpenAiMessage[],
-  endpoint: OpenAiEndpoint,
-  options: { responseFormatJson?: boolean } = {}
-): Promise<{ message: OpenAiMessage; usage: TokenUsage }> {
+  instructions: string,
+  tools: Array<{ type: "function"; name: string; description: string; parameters: unknown }> | undefined,
+  input: unknown[],
+  baseUrl: string
+): Promise<ResponsesResult> {
   const body: Record<string, unknown> = {
     model,
-    messages
+    instructions,
+    input,
+    reasoning: { effort: THINKING_EFFORT },
+    max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+    store: false,
+    include: ["reasoning.encrypted_content"]
   };
-
-  if (endpoint.reasoning) {
-    body.reasoning_effort = THINKING_EFFORT;
-  }
-
-  if (endpoint.maxTokens) {
-    body.max_tokens = endpoint.maxTokens;
-  }
 
   if (tools) {
     body.tools = tools;
     body.tool_choice = "auto";
   }
 
-  if (options.responseFormatJson) {
-    body.response_format = { type: "json_object" };
-  }
-
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${apiKey}`,
-    "content-type": "application/json"
-  };
-
-  if (endpoint.accept) {
-    headers.accept = endpoint.accept;
-  }
-
-  const response = await fetch(`${endpoint.baseUrl}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/responses`, {
     method: "POST",
-    headers,
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json"
+    },
     body: JSON.stringify(body)
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI audit failed (${response.status}): ${await safeText(response)}`);
+    throw new Error(`OpenAI Responses audit failed (${response.status}): ${await safeText(response)}`);
   }
 
-  const data = await response.json<{ choices?: Array<{ message?: OpenAiMessage }>; usage?: { prompt_tokens?: number; completion_tokens?: number } }>();
-  const message = data.choices?.[0]?.message;
+  const data = await response.json<{
+    output?: ResponsesOutputItem[];
+    output_text?: string;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  }>();
 
-  if (!message) {
-    throw new Error("OpenAI audit returned no message.");
-  }
+  const output = Array.isArray(data.output) ? data.output : [];
+  const outputText = typeof data.output_text === "string" && data.output_text
+    ? data.output_text
+    : output
+        .filter((item) => item?.type === "message")
+        .flatMap((item) => (item.content ?? []).filter((part) => part?.type === "output_text").map((part) => part.text ?? ""))
+        .join("\n");
 
   return {
-    message,
+    output,
+    outputText,
     usage: {
-      inputTokens: data.usage?.prompt_tokens ?? 0,
-      outputTokens: data.usage?.completion_tokens ?? 0
+      inputTokens: data.usage?.input_tokens ?? 0,
+      outputTokens: data.usage?.output_tokens ?? 0
     }
   };
 }

@@ -20,7 +20,8 @@
 import { inspectPackage } from "betternpm-core";
 
 const MODEL_ENDPOINT = (process.env.MODEL_ENDPOINT || "http://localhost:4141").replace(/\/$/, "");
-const MODEL_ID = process.env.MODEL_ID || "gpt-5-mini";
+const MODEL_ID = process.env.MODEL_ID || "claude-opus-4-8";
+const MODEL_PATH = process.env.MODEL_PATH || "/v1/messages";
 const API_URL = (process.env.API_URL || "https://api.betternpm.org").replace(/\/$/, "");
 const INGEST_TOKEN = process.env.INGEST_TOKEN;
 
@@ -88,29 +89,27 @@ function parseVerdict(content) {
 }
 
 async function callModel(evidence) {
-  const res = await fetch(`${MODEL_ENDPOINT}/chat/completions`, {
+  const res = await fetch(`${MODEL_ENDPOINT}${MODEL_PATH}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: MODEL_ID,
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `Audit this package. Evidence:\n${evidence}` }
-      ],
       max_tokens: 8000,
-      response_format: { type: "json_object" }
+      system: SYSTEM,
+      messages: [{ role: "user", content: `Audit this package. Evidence:\n${evidence}` }]
     })
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`model ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) throw new Error(`model ${res.status}: ${text.slice(0, 400)}`);
   let data;
   try {
     data = JSON.parse(text);
   } catch {
     throw new Error(`model returned a non-JSON envelope: ${text.slice(0, 200)}`);
   }
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error(`model returned no content: ${text.slice(0, 200)}`);
+  const blocks = Array.isArray(data.content) ? data.content : [];
+  const content = blocks.filter((b) => b?.type === "text").map((b) => b.text || "").join("\n").trim();
+  if (!content) throw new Error(`model returned no text content: ${text.slice(0, 200)}`);
   return parseVerdict(content);
 }
 
