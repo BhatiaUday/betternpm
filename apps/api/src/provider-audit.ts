@@ -28,7 +28,8 @@ const INITIAL_FILE_LIMIT = 160;
 // OpenAI gpt-5.5 (reasoning_effort "high"). Update these two IDs as new flagships ship.
 const DEFAULT_PROVIDER_MODELS = {
   anthropic: "claude-opus-4-8",
-  openai: "gpt-5.5"
+  openai: "gpt-5.5",
+  github: "openai/gpt-4.1"
 } as const;
 
 export function defaultModelFor(provider: AuditProvider): string {
@@ -37,10 +38,30 @@ export function defaultModelFor(provider: AuditProvider): string {
       return DEFAULT_PROVIDER_MODELS.anthropic;
     case "openai":
       return DEFAULT_PROVIDER_MODELS.openai;
+    case "github":
+      return DEFAULT_PROVIDER_MODELS.github;
     case "local":
       return SCANNER_PROFILE_VERSION;
   }
 }
+
+// OpenAI-compatible chat-completions endpoints. GitHub Models speaks the same API,
+// so the OpenAI agent is reused with a different base URL + auth. GitHub Models does
+// not accept `reasoning_effort` and caps free-tier tokens (8k in / 4k out).
+interface OpenAiEndpoint {
+  baseUrl: string;
+  reasoning: boolean;
+  maxTokens?: number;
+  accept?: string;
+}
+
+const OPENAI_ENDPOINT: OpenAiEndpoint = { baseUrl: "https://api.openai.com/v1", reasoning: true };
+const GITHUB_MODELS_ENDPOINT: OpenAiEndpoint = {
+  baseUrl: "https://models.github.ai/inference",
+  reasoning: false,
+  maxTokens: 4000,
+  accept: "application/vnd.github+json"
+};
 
 export async function runProviderAudit(input: {
   provider: Exclude<AuditProvider, "local">;
@@ -52,9 +73,14 @@ export async function runProviderAudit(input: {
 }): Promise<ProviderAuditReport> {
   const system = buildSystemPrompt(input.target);
   const initialUser = buildInitialUserMessage(input.facts, input.workspace, input.target);
-  const run = input.provider === "anthropic"
-    ? await runAnthropicAgent(input.model, input.apiKey, system, initialUser, input.workspace)
-    : await runOpenAiAgent(input.model, input.apiKey, system, initialUser, input.workspace);
+
+  let run: AgentRun;
+  if (input.provider === "anthropic") {
+    run = await runAnthropicAgent(input.model, input.apiKey, system, initialUser, input.workspace);
+  } else {
+    const endpoint = input.provider === "github" ? GITHUB_MODELS_ENDPOINT : OPENAI_ENDPOINT;
+    run = await runOpenAiAgent(input.model, input.apiKey, system, initialUser, input.workspace, endpoint);
+  }
 
   return normalizeReport(run.verdict, run.usage);
 }
@@ -374,7 +400,8 @@ async function runOpenAiAgent(
   apiKey: string,
   system: string,
   initialUser: string,
-  workspace: PackageWorkspace
+  workspace: PackageWorkspace,
+  endpoint: OpenAiEndpoint
 ): Promise<AgentRun> {
   const tools = AUDIT_TOOLS.map((tool) => ({
     type: "function" as const,
@@ -391,7 +418,7 @@ async function runOpenAiAgent(
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const result = await openAiRequest(model, apiKey, tools, messages);
+    const result = await openAiRequest(model, apiKey, tools, messages, endpoint);
     addUsage(usage, result.usage);
     const message = result.message;
     const toolCalls = message.tool_calls ?? [];
@@ -426,7 +453,7 @@ async function runOpenAiAgent(
   }
 
   messages.push({ role: "user", content: FINAL_INSTRUCTION });
-  const result = await openAiRequest(model, apiKey, undefined, messages, { responseFormatJson: true });
+  const result = await openAiRequest(model, apiKey, undefined, messages, endpoint, { responseFormatJson: true });
   addUsage(usage, result.usage);
   return { verdict: parseVerdictText(result.message.content ?? ""), usage };
 }
@@ -441,13 +468,21 @@ async function openAiRequest(
   apiKey: string,
   tools: Array<{ type: "function"; function: { name: string; description: string; parameters: unknown } }> | undefined,
   messages: OpenAiMessage[],
+  endpoint: OpenAiEndpoint,
   options: { responseFormatJson?: boolean } = {}
 ): Promise<{ message: OpenAiMessage; usage: TokenUsage }> {
   const body: Record<string, unknown> = {
     model,
-    reasoning_effort: THINKING_EFFORT,
     messages
   };
+
+  if (endpoint.reasoning) {
+    body.reasoning_effort = THINKING_EFFORT;
+  }
+
+  if (endpoint.maxTokens) {
+    body.max_tokens = endpoint.maxTokens;
+  }
 
   if (tools) {
     body.tools = tools;
@@ -458,12 +493,18 @@ async function openAiRequest(
     body.response_format = { type: "json_object" };
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json"
+  };
+
+  if (endpoint.accept) {
+    headers.accept = endpoint.accept;
+  }
+
+  const response = await fetch(`${endpoint.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json"
-    },
+    headers,
     body: JSON.stringify(body)
   });
 

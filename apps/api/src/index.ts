@@ -38,6 +38,7 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   SESSION_SIGNING_SECRET?: string;
+  GITHUB_MODELS_TOKEN?: string;
   WEB_APP_URL?: string;
   API_BASE_URL?: string;
 }
@@ -406,7 +407,7 @@ async function createAuditRequest(request: Request, env: Env): Promise<Response>
   const provider = parseProvider(body.provider ?? null);
 
   if (!provider || provider === "local") {
-    return json({ error: "Queued audits require provider anthropic or openai." }, 400, request, env);
+    return json({ error: "Queued audits require provider anthropic, openai, or github." }, 400, request, env);
   }
 
   const session = await resolveSession(request, env, body.sessionToken);
@@ -435,8 +436,19 @@ async function createAuditRequest(request: Request, env: Env): Promise<Response>
     return json({ queued: false, cached: true, audit: cached }, 200, request, env);
   }
 
-  if (!body.apiKey) {
-    return json({ error: "apiKey is required to enqueue an AI audit. The key is held only in the queue message and is not stored in D1." }, 400, request, env);
+  let apiKey: string;
+
+  if (provider === "github") {
+    // Demo/seed audits run on a server-side GitHub Models token, not BYOK.
+    if (!env.GITHUB_MODELS_TOKEN) {
+      return json({ error: "GitHub Models audits are not configured on this server." }, 503, request, env);
+    }
+    apiKey = env.GITHUB_MODELS_TOKEN;
+  } else {
+    if (!body.apiKey) {
+      return json({ error: "apiKey is required to enqueue an AI audit. The key is held only in the queue message and is not stored in D1." }, 400, request, env);
+    }
+    apiKey = body.apiKey;
   }
 
   const now = new Date().toISOString();
@@ -460,7 +472,7 @@ async function createAuditRequest(request: Request, env: Env): Promise<Response>
     version: requestedVersion,
     provider,
     model,
-    apiKey: body.apiKey,
+    apiKey,
     includeOsv: body.includeOsv ?? true,
     forceRefresh: body.forceRefresh === true,
     username
@@ -837,7 +849,7 @@ async function safeQueryOsv(name: string, version: string): Promise<OsvVulnerabi
 }
 
 function parseProvider(value: string | null): AuditProvider | undefined {
-  if (value === "local" || value === "anthropic" || value === "openai") {
+  if (value === "local" || value === "anthropic" || value === "openai" || value === "github") {
     return value;
   }
 

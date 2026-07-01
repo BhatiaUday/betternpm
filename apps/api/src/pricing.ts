@@ -12,12 +12,14 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-sonnet-4-6": { inputPerMillion: 3, outputPerMillion: 15 },
   "claude-opus-4-8": { inputPerMillion: 5, outputPerMillion: 25 },
   "gpt-5.4": { inputPerMillion: 1.25, outputPerMillion: 10 },
-  "gpt-5.5": { inputPerMillion: 2, outputPerMillion: 15 }
+  "gpt-5.5": { inputPerMillion: 2, outputPerMillion: 15 },
+  "openai/gpt-4.1": { inputPerMillion: 2, outputPerMillion: 8 }
 };
 
 const PROVIDER_FALLBACK: Record<Exclude<AuditProvider, "local">, ModelPrice> = {
   anthropic: { inputPerMillion: 3, outputPerMillion: 15 },
-  openai: { inputPerMillion: 1.25, outputPerMillion: 10 }
+  openai: { inputPerMillion: 1.25, outputPerMillion: 10 },
+  github: { inputPerMillion: 2, outputPerMillion: 8 }
 };
 
 export function estimateCostUsd(

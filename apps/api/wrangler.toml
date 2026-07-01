@@ -13,6 +13,9 @@ GITHUB_CLIENT_ID = "Ov23liwD7QmH0z7nY5aM"
 # Secrets (set via `wrangler secret put <NAME>`, never commit them):
 #   GITHUB_CLIENT_SECRET    — the GitHub OAuth App client secret
 #   SESSION_SIGNING_SECRET  — a random 32+ char string (e.g. `openssl rand -hex 32`)
+#   GITHUB_MODELS_TOKEN     — a GitHub PAT with `models:read`, used for server-run
+#                             demo/seed audits (provider "github"). Free tier caps
+#                             8k input / 4k output tokens per request.
 # Until GITHUB_CLIENT_ID + both secrets are set, GitHub login is disabled and the
 # rest of the API works unchanged.
 

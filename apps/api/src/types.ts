@@ -3,7 +3,7 @@ export const SCANNER_PROFILE_VERSION = "agent-audit-v1";
 export type FindingSeverity = "info" | "low" | "medium" | "high" | "blocked";
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
 export type AuditConfidence = "low" | "medium" | "high";
-export type AuditProvider = "local" | "anthropic" | "openai";
+export type AuditProvider = "local" | "anthropic" | "openai" | "github";
 export type AuditTargetKind = "npx" | "npm-install";
 
 export interface NpmMaintainer {
