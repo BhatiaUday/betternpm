@@ -23,8 +23,8 @@ export default function Page() {
             <ArrowUpRight size={18} aria-hidden="true" />
           </a>
           <p className="home-cta-note">
-            No install needed — search any npm package in your browser and queue an AI audit with
-            your own key. Sign in with GitHub to claim your handle on the <a href="/leaderboard">leaderboard</a>.
+            No install needed — search and audit any npm package right in your browser. Sign in with
+            GitHub to claim your handle on the <a href="/leaderboard">leaderboard</a>.
           </p>
         </div>
 
