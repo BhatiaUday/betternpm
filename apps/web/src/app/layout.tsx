@@ -19,11 +19,11 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://betternpm.org"),
   title: "Better npm | Inspect npm packages before you run them",
   description:
-    "AI-assisted npm package audits. Catch malware, typosquats, and known vulnerabilities before a package executes. Install with npm i -g betternpm-cli.",
+    "Inspect npm packages for typosquats, risky install scripts, known vulnerabilities, and malware signals before they run. Free CLI; optional bring-your-own-key AI audit. Install with npm i -g betternpm-cli.",
   openGraph: {
     title: "Better npm | Inspect npm packages before you run them",
     description:
-      "AI-assisted npm package audits. Catch malware, typosquats, and known vulnerabilities before a package executes.",
+      "Inspect npm packages for typosquats, risky install scripts, and known vulnerabilities before they run — free, no key needed.",
     url: "https://betternpm.org",
     siteName: "Better npm",
     type: "website"

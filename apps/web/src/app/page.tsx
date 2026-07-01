@@ -8,8 +8,9 @@ export default function Page() {
         <p className="kicker">Now live on npm</p>
         <h1 id="launch-title">Inspect before you run.</h1>
         <p className="launch-copy">
-          betternpm inspects npm packages for malware, typosquats, and known vulnerabilities
-          before they ever execute — in your terminal or your browser, then hands off to npm.
+          betternpm inspects npm packages for typosquats, risky install scripts, and known
+          vulnerabilities before they ever run — free, no key — then hands off to npm. Add your
+          own AI key for a deeper malware audit.
         </p>
 
         <div className="command-stack" aria-label="Install commands">
@@ -23,8 +24,8 @@ export default function Page() {
             <ArrowUpRight size={18} aria-hidden="true" />
           </a>
           <p className="home-cta-note">
-            No install needed — audit any npm package right in your browser. Sign in with GitHub
-            to claim your handle on the <a href="/leaderboard">leaderboard</a>.
+            No install needed — search any npm package in your browser and queue an AI audit with
+            your own key. Sign in with GitHub to claim your handle on the <a href="/leaderboard">leaderboard</a>.
           </p>
         </div>
 
