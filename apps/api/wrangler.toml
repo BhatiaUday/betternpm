@@ -16,6 +16,8 @@ GITHUB_CLIENT_ID = "Ov23liwD7QmH0z7nY5aM"
 #   GITHUB_MODELS_TOKEN     — a GitHub PAT with `models:read`, used for server-run
 #                             demo/seed audits (provider "github"). Free tier caps
 #                             8k input / 4k output tokens per request.
+#   INGEST_TOKEN            — a random secret gating POST /v1/audits/ingest, used to
+#                             upload audits computed locally (operator-only).
 # Until GITHUB_CLIENT_ID + both secrets are set, GitHub login is disabled and the
 # rest of the API works unchanged.
 

@@ -14,7 +14,7 @@ import { estimateCostUsd } from "./pricing.js";
 import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, searchAudits } from "./leaderboard.js";
 import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, pollDeviceFlow, readGithubConfig, readStateCookie, signSession, startDeviceFlow, stateCookie, verifySession } from "./auth.js";
 import { upsertAccount } from "./accounts.js";
-import { SCANNER_PROFILE_VERSION, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type OsvVulnerability, type PackageFacts, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
+import { SCANNER_PROFILE_VERSION, type AuditConfidence, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type FindingSeverity, type OsvVulnerability, type PackageFacts, type ProviderAuditReport, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
 
 interface AuditQueueMessage {
   requestId: string;
@@ -39,6 +39,7 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   SESSION_SIGNING_SECRET?: string;
   GITHUB_MODELS_TOKEN?: string;
+  INGEST_TOKEN?: string;
   WEB_APP_URL?: string;
   API_BASE_URL?: string;
 }
@@ -190,6 +191,10 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/v1/audits") {
       return getAudit(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/audits/ingest") {
+      return ingestAudit(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/audit-requests") {
@@ -495,6 +500,113 @@ async function getAuditRequest(request: Request, env: Env, id: string): Promise<
   return json({ request: auditRequest, audit: audit ?? null }, 200, request, env);
 }
 
+interface IngestRiskInput {
+  level?: unknown;
+  score?: unknown;
+  confidence?: unknown;
+  summary?: unknown;
+  findings?: unknown;
+}
+
+function normalizeIngestRisk(raw: IngestRiskInput): RiskAssessment | undefined {
+  const levels: RiskLevel[] = ["low", "medium", "high", "blocked"];
+  const level = typeof raw.level === "string" && (levels as string[]).includes(raw.level) ? raw.level as RiskLevel : undefined;
+  const scoreNum = typeof raw.score === "number" ? raw.score : Number(raw.score);
+
+  if (!level || !Number.isFinite(scoreNum)) {
+    return undefined;
+  }
+
+  const score = Math.max(0, Math.min(100, Math.round(scoreNum)));
+  const confidences: AuditConfidence[] = ["low", "medium", "high"];
+  const confidence = typeof raw.confidence === "string" && (confidences as string[]).includes(raw.confidence) ? raw.confidence as AuditConfidence : undefined;
+  const summary = typeof raw.summary === "string" ? raw.summary.slice(0, 2000) : undefined;
+  const severities: FindingSeverity[] = ["info", "low", "medium", "high", "blocked"];
+  const findings: Finding[] = Array.isArray(raw.findings)
+    ? raw.findings.slice(0, 40).flatMap((entry) => {
+        const rec = entry as Record<string, unknown>;
+        const title = typeof rec.title === "string" ? rec.title.slice(0, 300) : undefined;
+
+        if (!title) {
+          return [];
+        }
+
+        const severity = typeof rec.severity === "string" && (severities as string[]).includes(rec.severity) ? rec.severity as FindingSeverity : "info";
+        const code = typeof rec.code === "string" && rec.code ? rec.code.slice(0, 60) : "other";
+        const detail = typeof rec.detail === "string" ? rec.detail.slice(0, 1000) : undefined;
+        return [{ severity, code, title, detail }];
+      })
+    : [];
+
+  return { level, score, findings, confidence, summary };
+}
+
+// Admin-only: store an audit whose AI verdict was computed elsewhere (e.g. locally
+// against an operator's own model endpoint). The server still rebuilds the canonical
+// record — fetches metadata, verifies integrity, scans the tarball for facts, and
+// floors the risk against OSV — so only the verdict is trusted from the caller.
+async function ingestAudit(request: Request, env: Env): Promise<Response> {
+  if (!env.INGEST_TOKEN) {
+    return json({ error: "Audit ingest is not configured on this server." }, 503, request, env);
+  }
+
+  const token = request.headers.get("x-ingest-token");
+
+  if (!token || token !== env.INGEST_TOKEN) {
+    return json({ error: "Unauthorized." }, 401, request, env);
+  }
+
+  const body = await request.json().catch(() => undefined) as {
+    target?: string;
+    packageName?: string;
+    version?: string;
+    provider?: string;
+    model?: string;
+    risk?: IngestRiskInput;
+    usage?: { inputTokens?: number; outputTokens?: number };
+  } | undefined;
+
+  if (!body?.packageName || !body.model || !body.risk) {
+    return json({ error: "packageName, model, and risk are required." }, 400, request, env);
+  }
+
+  const provider = parseProvider(body.provider ?? "github");
+  const target = parseTarget(body.target ?? null) ?? "npm-install";
+
+  if (!provider || provider === "local") {
+    return json({ error: "provider must be anthropic, openai, or github." }, 400, request, env);
+  }
+
+  const risk = normalizeIngestRisk(body.risk);
+
+  if (!risk) {
+    return json({ error: "risk must include a valid level (low|medium|high|blocked) and numeric score." }, 400, request, env);
+  }
+
+  const usage = body.usage && typeof body.usage.inputTokens === "number" && typeof body.usage.outputTokens === "number"
+    ? { inputTokens: body.usage.inputTokens, outputTokens: body.usage.outputTokens }
+    : undefined;
+
+  try {
+    const result = await runAudit({
+      target,
+      packageName: body.packageName,
+      version: body.version,
+      provider,
+      model: body.model,
+      apiKey: "",
+      includeOsv: true,
+      forceRefresh: true,
+      precomputedRisk: risk,
+      usage
+    }, env);
+
+    return json({ ingested: true, audit: result.audit }, 200, request, env);
+  } catch (error) {
+    return json({ error: errorMessage(error) }, 502, request, env);
+  }
+}
+
 async function processAuditQueueMessage(message: AuditQueueMessage, env: Env): Promise<void> {
   const auditRequest = await readAuditRequestRecord(env.DB, message.requestId);
 
@@ -534,6 +646,8 @@ async function runAudit(input: {
   includeOsv: boolean;
   forceRefresh: boolean;
   username?: string;
+  precomputedRisk?: RiskAssessment;
+  usage?: TokenUsage;
 }, env: Env): Promise<{ cached: boolean; refreshed: boolean; audit: AuditRecord; status: number }> {
   const forceRefresh = input.forceRefresh;
 
@@ -583,14 +697,16 @@ async function runAudit(input: {
     vulnerabilities,
     sourceScan: workspace.summary()
   });
-  const providerRisk = await runProviderAudit({
-    provider: input.provider,
-    model: input.model,
-    apiKey: input.apiKey,
-    target: input.target,
-    facts,
-    workspace
-  });
+  const providerRisk: ProviderAuditReport = input.precomputedRisk
+    ? { risk: input.precomputedRisk, summary: input.precomputedRisk.summary ?? "", usage: input.usage ?? { inputTokens: 0, outputTokens: 0 } }
+    : await runProviderAudit({
+        provider: input.provider,
+        model: input.model,
+        apiKey: input.apiKey,
+        target: input.target,
+        facts,
+        workspace
+      });
   const risk = floorRisk(providerRisk.risk, facts);
   const auditedAt = new Date().toISOString();
   const audit = {
