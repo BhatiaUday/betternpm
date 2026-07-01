@@ -9,8 +9,7 @@ export default function Page() {
         <h1 id="launch-title">Inspect before you run.</h1>
         <p className="launch-copy">
           betternpm inspects npm packages for typosquats, risky install scripts, and known
-          vulnerabilities before they ever run — free, no key — then hands off to npm. Add your
-          own AI key for a deeper malware audit.
+          vulnerabilities before they ever run — then hands off to npm.
         </p>
 
         <div className="command-stack" aria-label="Install commands">
