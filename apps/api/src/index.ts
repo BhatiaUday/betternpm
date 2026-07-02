@@ -8,7 +8,7 @@ import {
 import { createAuditId, readAuditRecord, readAuditRecordById, readLatestAuditRecord, readLatestAuditForPackage, readAuditHistoryForPackage, writeAuditRecord } from "./audit-records.js";
 import { buildPackageFacts, fetchPackageMetadata, fetchWeeklyDownloads, resolveVersion, searchNpmRegistry, type NpmSearchHit } from "./npm.js";
 import { queryOsv } from "./osv.js";
-import { defaultModelFor, runProviderAudit } from "./provider-audit.js";
+import { defaultModelFor, runProviderAudit, type PreviousVersionRef } from "./provider-audit.js";
 import { createWorkspace } from "./workspace.js";
 import { estimateCostUsd } from "./pricing.js";
 import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, searchAudits } from "./leaderboard.js";
@@ -921,6 +921,7 @@ async function runAudit(input: {
         target: input.target,
         facts,
         workspace,
+        previousVersion: findPreviousVersion(metadata, versionMetadata.version),
         openaiBaseUrl: env.OPENAI_BASE_URL,
         anthropicBaseUrl: env.ANTHROPIC_BASE_URL
       });
@@ -1252,6 +1253,53 @@ function scoreCeiling(level: RiskLevel): number {
 
 // One-way safety net: hard, unambiguous signals can only RAISE the AI verdict, never lower it.
 // Defends against prompt-injected "low" verdicts and missed install-script risk.
+// The version published immediately before `currentVersion` (by publish time),
+// with a lazy tarball-workspace loader for the agent's release-diff tools.
+function findPreviousVersion(metadata: Awaited<ReturnType<typeof fetchPackageMetadata>>, currentVersion: string): PreviousVersionRef | undefined {
+  const time = metadata.time ?? {};
+  const currentTime = time[currentVersion] ? Date.parse(time[currentVersion] as string) : undefined;
+
+  if (!currentTime || !metadata.versions) {
+    return undefined;
+  }
+
+  let best: { version: string; publishedAt: number } | undefined;
+
+  for (const version of Object.keys(metadata.versions)) {
+    if (version === currentVersion) {
+      continue;
+    }
+
+    const publishedAt = time[version] ? Date.parse(time[version] as string) : Number.NaN;
+
+    if (!Number.isFinite(publishedAt) || publishedAt >= currentTime) {
+      continue;
+    }
+
+    if (!best || publishedAt > best.publishedAt) {
+      best = { version, publishedAt };
+    }
+  }
+
+  if (!best) {
+    return undefined;
+  }
+
+  const previousMetadata = metadata.versions[best.version];
+
+  if (!previousMetadata?.dist?.tarball) {
+    return undefined;
+  }
+
+  const tarballUrl = previousMetadata.dist.tarball;
+  const integrity = previousMetadata.dist.integrity ?? previousMetadata.dist.shasum;
+
+  return {
+    version: best.version,
+    load: () => createWorkspace({ tarballUrl, integrity, repository: previousMetadata.repository ?? metadata.repository, gitHead: previousMetadata.gitHead })
+  };
+}
+
 function floorRisk(risk: RiskAssessment, facts: PackageFacts): RiskAssessment {
   const scripts = facts.scripts ?? {};
   const installScripts = ["preinstall", "install", "postinstall"].filter((name) => scripts[name]);

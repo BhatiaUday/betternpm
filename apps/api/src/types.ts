@@ -1,4 +1,4 @@
-export const SCANNER_PROFILE_VERSION = "agent-audit-v1";
+export const SCANNER_PROFILE_VERSION = "agent-audit-v2";
 
 export type FindingSeverity = "info" | "low" | "medium" | "high" | "blocked";
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
