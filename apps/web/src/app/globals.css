@@ -1067,6 +1067,130 @@ h1 {
   margin-top: 10px;
 }
 
+.live-stats {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  gap: 8px;
+  margin: 22px 0 0;
+}
+
+.live-dot {
+  animation: pulse 2s ease-in-out infinite;
+  background: var(--accent);
+  border-radius: 999px;
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.recent-strip {
+  margin-top: 22px;
+}
+
+.recent-title {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.recent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recent-list a {
+  align-items: center;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.recent-list a:hover {
+  border-color: rgba(32, 95, 134, 0.48);
+}
+
+.recent-name {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+
+.recent-list .risk-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.qs-result {
+  background: rgba(30, 113, 82, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.qs-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.qs-label {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+}
+
+.qs-findings {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.qs-findings li {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.qs-clean {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.qs-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.qs-meta a {
+  color: var(--blue);
+}
+
 .security-section {
   border-top: 1px solid var(--line);
   margin-top: 26px;

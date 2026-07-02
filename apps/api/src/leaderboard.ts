@@ -119,7 +119,7 @@ export async function readAuditedStatusForPackages(db: D1Database, names: string
     SELECT package_name, version, risk_level, score, created_at
     FROM audit_records
     WHERE package_name IN (${placeholders})
-    ORDER BY created_at DESC
+    ORDER BY CASE WHEN provider = 'local' THEN 1 ELSE 0 END, created_at DESC
   `).bind(...unique).all<{
     package_name: string;
     version: string;

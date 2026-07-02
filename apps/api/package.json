@@ -7,6 +7,7 @@
   "scripts": {
     "cf:whoami": "wrangler whoami",
     "dev": "wrangler dev",
+    "test": "vitest run",
     "db:create": "wrangler d1 create betternpm-audits",
     "db:init:local": "wrangler d1 execute betternpm-audits --local --file src/schema.sql",
     "db:init:remote": "wrangler d1 execute betternpm-audits --remote --file src/schema.sql",

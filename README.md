@@ -54,6 +54,24 @@ No tool catches everything, and pretending otherwise is how trust dies:
 
 Full details: [betternpm.org/security](https://www.betternpm.org/security).
 
+## Badge for your README
+
+Show your package's community audit status:
+
+```markdown
+![betternpm audit](https://api.betternpm.org/v1/badge/YOUR-PACKAGE.svg)
+```
+
+The badge reflects the latest community audit (AI audits outrank quick scans) and is
+cached for an hour.
+
+## Platform notes
+
+- **Windows:** use `npm i -g betternpm-cli` — the `curl | sh` installer is macOS/Linux only.
+- **Name collisions:** unrelated npm packages own the names `betternpm` and `bnpm`. This
+  project's CLI installs global *bins* with those names from `betternpm-cli`; if you have the
+  unrelated packages installed globally, uninstall them first or the bins will conflict.
+
 ## Current MVP
 
 - Resolve packages from the public npm registry.

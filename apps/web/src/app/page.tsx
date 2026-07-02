@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import { CopyCommand } from "../components/copy-command";
+import { LiveStats } from "../components/live-stats";
 
 export default function Page() {
   return (
@@ -11,6 +12,8 @@ export default function Page() {
           betternpm inspects npm packages for typosquats, risky install scripts, and known
           vulnerabilities before they ever run — then hands off to npm.
         </p>
+
+        <LiveStats />
 
         <div className="command-stack" aria-label="Install commands">
           <CopyCommand command="npm i -g betternpm-cli" />

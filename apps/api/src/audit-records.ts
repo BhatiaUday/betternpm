@@ -112,7 +112,7 @@ export async function readLatestAuditForPackage(input: {
   const row = await input.db.prepare(`
     SELECT * FROM audit_records
     WHERE ${conditions.join(" AND ")}
-    ORDER BY created_at DESC
+    ORDER BY CASE WHEN provider = 'local' THEN 1 ELSE 0 END, created_at DESC
     LIMIT 1
   `).bind(...bindings).first<AuditRecordRow>();
 

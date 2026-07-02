@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ExternalLink, KeyRound, Loader2, Play, Search, ShieldCheck, SlidersHorizontal, Zap } from "lucide-react";
 import { useBrowserSettings, type Provider } from "../lib/browser-settings";
 import { loadBinMap } from "../lib/npm-detect";
 import { AccountControls } from "./account-controls";
@@ -17,6 +17,26 @@ interface RegistryResult {
   links?: { npm?: string; homepage?: string; repository?: string };
   audited: boolean;
   audit: { version: string; riskLevel: RiskLevel; score: number; auditedAt: string } | null;
+}
+
+interface RecentAudit {
+  packageName: string;
+  version: string;
+  riskLevel: RiskLevel;
+  score: number;
+  provider: string;
+  model: string;
+  createdAt: string;
+}
+
+interface QuickScanState {
+  status: "loading" | "done" | "error";
+  level?: RiskLevel;
+  score?: number;
+  version?: string;
+  summary?: string;
+  findings?: Array<{ severity: string; title: string }>;
+  error?: string;
 }
 
 interface AuditRecordLite {
@@ -73,6 +93,69 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
   const [progress, setProgress] = useState<string>();
   const [queueError, setQueueError] = useState<string>();
   const [queueResult, setQueueResult] = useState<QueueResult>();
+  const [recent, setRecent] = useState<RecentAudit[]>([]);
+  const [quickScans, setQuickScans] = useState<Record<string, QuickScanState>>({});
+
+  // Recent community audits give the page life before the first search.
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await fetch(`${endpoint}/v1/audits/recent?limit=8`);
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json() as { audits?: RecentAudit[] };
+
+        if (active) {
+          setRecent(data.audits ?? []);
+        }
+      } catch {
+        // Decorative; ignore failures.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [endpoint]);
+
+  const runQuickScan = useCallback(async (name: string, version: string) => {
+    setQuickScans((current) => ({ ...current, [name]: { status: "loading" } }));
+
+    try {
+      const response = await fetch(`${endpoint}/v1/packages/${encodeURIComponent(name)}/${encodeURIComponent(version || "latest")}/quick-scan`);
+      const data = await response.json() as {
+        version?: string;
+        audit?: { risk?: { level?: RiskLevel; score?: number; summary?: string; findings?: Array<{ severity: string; title: string }> } } | null;
+        error?: string;
+      };
+
+      if (!response.ok || !data.audit?.risk) {
+        throw new Error(data.error ?? `Quick scan failed (${response.status}).`);
+      }
+
+      setQuickScans((current) => ({
+        ...current,
+        [name]: {
+          status: "done",
+          level: data.audit?.risk?.level,
+          score: data.audit?.risk?.score,
+          version: data.version,
+          summary: data.audit?.risk?.summary,
+          findings: (data.audit?.risk?.findings ?? []).slice(0, 4)
+        }
+      }));
+    } catch (caught) {
+      setQuickScans((current) => ({
+        ...current,
+        [name]: { status: "error", error: caught instanceof Error ? caught.message : "Quick scan failed." }
+      }));
+    }
+  }, [endpoint]);
 
   const runSearch = useCallback(async (override?: string) => {
     const raw = (override ?? query).trim();
@@ -304,6 +387,22 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
         <p className="muted">No packages match that query.</p>
       )}
 
+      {!searched && recent.length > 0 && (
+        <section className="recent-strip" aria-label="Recently audited packages">
+          <h2 className="recent-title">Recently audited</h2>
+          <ul className="recent-list">
+            {recent.map((entry) => (
+              <li key={`${entry.packageName}@${entry.version}`}>
+                <a href={`/p/${entry.packageName}/${entry.version}`}>
+                  <span className="recent-name">{entry.packageName}@{entry.version}</span>
+                  <span className={`risk-badge risk-${entry.riskLevel}`}>{entry.riskLevel} {entry.score}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="pkg-list">
         {results.map((result) => (
           <div className={`pkg-card${selected === result.name ? " pkg-card--open" : ""}`} key={result.name}>
@@ -333,11 +432,54 @@ export function PackageSearch({ apiUrl }: { apiUrl: string }) {
               <button
                 type="button"
                 className="link-button"
+                onClick={() => void runQuickScan(result.name, result.version)}
+                disabled={quickScans[result.name]?.status === "loading"}
+              >
+                {quickScans[result.name]?.status === "loading"
+                  ? <Loader2 className="spin" size={13} aria-hidden="true" />
+                  : <Zap size={13} aria-hidden="true" />}
+                Quick scan (free)
+              </button>
+              <button
+                type="button"
+                className="link-button"
                 onClick={() => (selected === result.name ? setSelected(undefined) : void openAudit(result.name, result.audit?.version))}
               >
                 {selected === result.name ? "Close" : result.audited ? "Re-audit" : "Audit"}
               </button>
             </div>
+
+            {quickScans[result.name]?.status === "error" && (
+              <p className="error-line" role="alert">{quickScans[result.name]?.error}</p>
+            )}
+
+            {quickScans[result.name]?.status === "done" && (
+              <div className="qs-result">
+                <div className="qs-head">
+                  <Zap size={14} aria-hidden="true" />
+                  <span className={`risk-badge risk-${quickScans[result.name]?.level}`}>
+                    {quickScans[result.name]?.level} {quickScans[result.name]?.score}
+                  </span>
+                  <span className="qs-label">deterministic quick scan · v{quickScans[result.name]?.version}</span>
+                </div>
+                {(quickScans[result.name]?.findings?.length ?? 0) > 0 ? (
+                  <ul className="qs-findings">
+                    {quickScans[result.name]?.findings?.map((finding, index) => (
+                      <li key={index}>
+                        <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                        {finding.title}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="qs-clean">No deterministic risk signals found.</p>
+                )}
+                <p className="qs-meta">
+                  Pattern-based scan (OSV, typosquats, install scripts, source patterns) — not an AI review.{" "}
+                  <a href={`/p/${result.name}/${quickScans[result.name]?.version}`}>details →</a>
+                </p>
+              </div>
+            )}
 
             {selected === result.name && (
               <div className="inline-audit">

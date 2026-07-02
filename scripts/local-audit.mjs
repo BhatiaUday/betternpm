@@ -24,6 +24,7 @@ const MODEL_ID = process.env.MODEL_ID || "claude-opus-4-8";
 const MODEL_PATH = process.env.MODEL_PATH || "/v1/messages";
 const API_URL = (process.env.API_URL || "https://api.betternpm.org").replace(/\/$/, "");
 const INGEST_TOKEN = process.env.INGEST_TOKEN;
+const USERNAME = process.env.USERNAME_ATTRIBUTION || "";
 
 const packages = process.argv.slice(2);
 
@@ -119,10 +120,13 @@ async function callModel(evidence) {
   const blocks = Array.isArray(data.content) ? data.content : [];
   const content = blocks.filter((b) => b?.type === "text").map((b) => b.text || "").join("\n").trim();
   if (!content) throw new Error(`model returned no text content: ${text.slice(0, 200)}`);
-  return parseVerdict(content);
+  const usage = data.usage && typeof data.usage.input_tokens === "number"
+    ? { inputTokens: data.usage.input_tokens, outputTokens: data.usage.output_tokens ?? 0 }
+    : undefined;
+  return { verdict: parseVerdict(content), usage };
 }
 
-async function upload(facts, verdict) {
+async function upload(facts, verdict, usage) {
   const res = await fetch(`${API_URL}/v1/audits/ingest`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-ingest-token": INGEST_TOKEN },
@@ -132,7 +136,9 @@ async function upload(facts, verdict) {
       version: facts.version,
       provider: "github",
       model: MODEL_ID,
-      risk: verdict
+      risk: verdict,
+      usage,
+      username: USERNAME || undefined
     })
   });
   const text = await res.text();
@@ -145,9 +151,9 @@ for (const pkg of packages) {
   try {
     const inspection = await inspectPackage(pkg, { target: "npm-install", includeOsv: true, inspectTarball: true });
     process.stdout.write(`  inspected ${inspection.facts.name}@${inspection.facts.version}\n`);
-    const verdict = await callModel(evidenceFor(inspection));
+    const { verdict, usage } = await callModel(evidenceFor(inspection));
     process.stdout.write(`  verdict: ${verdict.level} ${verdict.score} — ${(verdict.summary || "").slice(0, 140)}\n`);
-    const result = await upload(inspection.facts, verdict);
+    const result = await upload(inspection.facts, verdict, usage);
     const a = result.audit;
     process.stdout.write(`  uploaded: ${a?.identity?.packageName}@${a?.identity?.version} -> ${a?.risk?.level} ${a?.risk?.score}\n`);
   } catch (err) {

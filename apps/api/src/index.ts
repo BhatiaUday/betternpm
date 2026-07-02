@@ -14,6 +14,7 @@ import { estimateCostUsd } from "./pricing.js";
 import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, searchAudits } from "./leaderboard.js";
 import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, pollDeviceFlow, readGithubConfig, readStateCookie, signSession, startDeviceFlow, stateCookie, verifySession } from "./auth.js";
 import { upsertAccount } from "./accounts.js";
+import { assessLocalRisk, renderBadgeSvg } from "./quick-scan.js";
 import { SCANNER_PROFILE_VERSION, type AuditConfidence, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type FindingSeverity, type OsvVulnerability, type PackageFacts, type ProviderAuditReport, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
 
 interface AuditQueueMessage {
@@ -91,7 +92,8 @@ async function enforceRateLimit(request: Request, env: Env, url: URL): Promise<R
   }
 
   const isAuditCreate = request.method === "POST" && url.pathname === "/v1/audit-requests";
-  const limiter = isAuditCreate ? env.AUDIT_RATE_LIMITER : env.API_RATE_LIMITER;
+  const isQuickScan = request.method === "GET" && /\/quick-scan$/.test(url.pathname);
+  const limiter = isAuditCreate || isQuickScan ? env.AUDIT_RATE_LIMITER : env.API_RATE_LIMITER;
 
   if (!limiter) {
     return undefined;
@@ -119,6 +121,8 @@ function routeBucket(method: string, pathname: string): string {
     .replace(/^\/v1\/audit-requests\/[^/]+$/, "/v1/audit-requests/:id")
     .replace(/^\/v1\/packages\/.+\/versions$/, "/v1/packages/:pkg/versions")
     .replace(/^\/v1\/packages\/.+\/audits$/, "/v1/packages/:pkg/audits")
+    .replace(/^\/v1\/packages\/.+\/[^/]+\/quick-scan$/, "/v1/packages/:pkg/:version/quick-scan")
+    .replace(/^\/v1\/badge\/.+$/, "/v1/badge/:pkg")
     .replace(/^\/v1\/packages\/.+\/[^/]+\/summary$/, "/v1/packages/:pkg/:version/summary")
     .replace(/^\/v1\/packages\/.+\/[^/]+\/audit$/, "/v1/packages/:pkg/:version/audit");
 
@@ -152,6 +156,10 @@ export default {
           packageVersions: "/v1/packages/:package/versions",
           packageSummary: "/v1/packages/:package/:version/summary",
           packageAudits: "/v1/packages/:package/audits",
+          quickScan: "/v1/packages/:package/:version/quick-scan",
+          stats: "/v1/stats",
+          recentAudits: "/v1/audits/recent",
+          badge: "/v1/badge/:package.svg",
           leaderboard: "/v1/leaderboard",
           search: "/v1/search?q=",
           registrySearch: "/v1/registry-search?q=",
@@ -189,6 +197,24 @@ export default {
     const packageAuditsMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/audits$/);
     if (request.method === "GET" && packageAuditsMatch) {
       return getPackageAudits(request, env, decodeURIComponent(packageAuditsMatch[1] ?? ""));
+    }
+
+    const quickScanMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/([^/]+)\/quick-scan$/);
+    if (request.method === "GET" && quickScanMatch) {
+      return quickScanPackage(request, env, url, decodeURIComponent(quickScanMatch[1] ?? ""), decodeURIComponent(quickScanMatch[2] ?? ""));
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/stats") {
+      return getStats(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/audits/recent") {
+      return getRecentAudits(request, env, url);
+    }
+
+    const badgeMatch = url.pathname.match(/^\/v1\/badge\/(.+?)(\.svg)?$/);
+    if (request.method === "GET" && badgeMatch) {
+      return getBadge(env, decodeURIComponent(badgeMatch[1] ?? ""));
     }
 
     if (request.method === "POST" && url.pathname === "/v1/audits") {
@@ -349,6 +375,147 @@ async function getPackageAudits(request: Request, env: Env, packageName: string)
 
   const audits = await readAuditHistoryForPackage(env.DB, packageName, 50);
   return json({ packageName, audits }, 200, request, env);
+}
+
+// Free deterministic scan: no key, no AI. Fetches metadata, verifies + scans the
+// tarball, and scores mechanically (OSV, typosquat, install scripts, source
+// patterns). Cached in the shared audit table as provider "local" so repeat scans
+// are instant and community-wide.
+async function quickScanPackage(request: Request, env: Env, url: URL, packageName: string, requestedVersion: string): Promise<Response> {
+  if (!packageName) {
+    return json({ error: "packageName is required" }, 400, request, env);
+  }
+
+  const target = parseTarget(url.searchParams.get("target")) ?? "npm-install";
+
+  let metadata;
+  try {
+    metadata = await fetchPackageMetadata(packageName);
+  } catch (error) {
+    return json({ error: `Unable to resolve "${packageName}" on the npm registry.`, detail: errorMessage(error) }, 404, request, env);
+  }
+
+  const versionMetadata = resolveVersion(metadata, requestedVersion || "latest");
+  const integrity = versionMetadata.dist?.integrity ?? versionMetadata.dist?.shasum ?? "no-integrity";
+  const identity: AuditIdentity = {
+    target,
+    packageName: versionMetadata.name,
+    version: versionMetadata.version,
+    integrity,
+    scannerProfile: SCANNER_PROFILE_VERSION,
+    provider: "local",
+    model: SCANNER_PROFILE_VERSION
+  };
+
+  const cached = await readAuditRecord(env.DB, identity);
+
+  if (cached) {
+    return json({ packageName: identity.packageName, version: identity.version, cached: true, audit: cached }, 200, request, env);
+  }
+
+  if (!versionMetadata.dist?.tarball) {
+    return json({ error: `No downloadable tarball found for ${identity.packageName}@${identity.version}.` }, 422, request, env);
+  }
+
+  try {
+    const [downloads, vulnerabilities] = await Promise.all([
+      fetchWeeklyDownloads(versionMetadata.name),
+      safeQueryOsv(versionMetadata.name, versionMetadata.version)
+    ]);
+    const workspace = await createWorkspace({
+      tarballUrl: versionMetadata.dist.tarball,
+      integrity,
+      repository: versionMetadata.repository ?? metadata.repository,
+      gitHead: versionMetadata.gitHead
+    });
+    const facts = buildPackageFacts({
+      requested: packageName,
+      metadata,
+      versionMetadata,
+      downloads,
+      vulnerabilities,
+      sourceScan: workspace.summary()
+    });
+    const risk = floorRisk(assessLocalRisk(facts, packageName), facts);
+    const auditedAt = new Date().toISOString();
+    const audit: AuditRecord = {
+      id: await createAuditId(identity),
+      identity,
+      facts,
+      risk,
+      auditedAt,
+      createdAt: auditedAt
+    };
+
+    await writeAuditRecord(env.DB, audit);
+    return json({ packageName: identity.packageName, version: identity.version, cached: false, audit }, 201, request, env);
+  } catch (error) {
+    return json({ error: `Quick scan failed: ${errorMessage(error)}` }, 502, request, env);
+  }
+}
+
+async function getStats(request: Request, env: Env): Promise<Response> {
+  const row = await env.DB.prepare(`
+    SELECT
+      COUNT(*) AS audits,
+      COUNT(DISTINCT package_name) AS packages,
+      SUM(CASE WHEN risk_level IN ('high', 'blocked') THEN 1 ELSE 0 END) AS risky
+    FROM audit_records
+  `).first<{ audits: number; packages: number; risky: number }>();
+
+  return json({
+    audits: row?.audits ?? 0,
+    packages: row?.packages ?? 0,
+    risky: row?.risky ?? 0
+  }, 200, request, env);
+}
+
+async function getRecentAudits(request: Request, env: Env, url: URL): Promise<Response> {
+  const limit = clampLimit(url.searchParams.get("limit"), 10, 30);
+  const result = await env.DB.prepare(`
+    SELECT package_name, version, risk_level, score, provider, model, MAX(created_at) AS created_at
+    FROM audit_records
+    GROUP BY package_name
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(limit).all<{
+    package_name: string;
+    version: string;
+    risk_level: string;
+    score: number;
+    provider: string;
+    model: string;
+    created_at: string;
+  }>();
+
+  const audits = (result.results ?? []).map((row) => ({
+    packageName: row.package_name,
+    version: row.version,
+    riskLevel: row.risk_level,
+    score: row.score,
+    provider: row.provider,
+    model: row.model,
+    createdAt: row.created_at
+  }));
+
+  return json({ audits }, 200, request, env);
+}
+
+// README-embeddable SVG badge. Cached at the edge for an hour — badges are a
+// distribution surface, not a live dashboard.
+async function getBadge(env: Env, packageName: string): Promise<Response> {
+  const statuses = await readAuditedStatusForPackages(env.DB, [packageName]);
+  const status = statuses.get(packageName);
+  const svg = renderBadgeSvg(status ? { riskLevel: status.riskLevel, score: status.score } : undefined);
+
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "public, max-age=3600",
+      "access-control-allow-origin": "*"
+    }
+  });
 }
 
 async function getAudit(request: Request, env: Env): Promise<Response> {
@@ -566,6 +733,7 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
     model?: string;
     risk?: IngestRiskInput;
     usage?: { inputTokens?: number; outputTokens?: number };
+    username?: string;
   } | undefined;
 
   if (!body?.packageName || !body.model || !body.risk) {
@@ -588,6 +756,7 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
   const usage = body.usage && typeof body.usage.inputTokens === "number" && typeof body.usage.outputTokens === "number"
     ? { inputTokens: body.usage.inputTokens, outputTokens: body.usage.outputTokens }
     : undefined;
+  const username = typeof body.username === "string" && body.username.trim() ? body.username.trim().slice(0, 40) : undefined;
 
   try {
     const result = await runAudit({
@@ -600,7 +769,8 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
       includeOsv: true,
       forceRefresh: true,
       precomputedRisk: risk,
-      usage
+      usage,
+      username
     }, env);
 
     return json({ ingested: true, audit: result.audit }, 200, request, env);
