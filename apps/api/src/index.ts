@@ -15,7 +15,7 @@ import { incrementLeaderboard, readAuditedStatusForPackages, readLeaderboard, se
 import { bearerToken, buildAuthorizeUrl, clearStateCookie, exchangeCodeForToken, fetchGithubUser, pollDeviceFlow, readGithubConfig, readStateCookie, signSession, startDeviceFlow, stateCookie, verifySession } from "./auth.js";
 import { upsertAccount } from "./accounts.js";
 import { assessLocalRisk, renderBadgeSvg } from "./quick-scan.js";
-import { SCANNER_PROFILE_VERSION, type AuditConfidence, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type FindingSeverity, type OsvVulnerability, type PackageFacts, type ProviderAuditReport, type RiskAssessment, type RiskLevel, type TokenUsage } from "./types.js";
+import { SCANNER_PROFILE_VERSION, type AuditConfidence, type AuditIdentity, type AuditProvider, type AuditRecord, type AuditTargetKind, type Finding, type FindingSeverity, type OsvVulnerability, type PackageFacts, type ProviderAuditReport, type RiskAssessment, type RiskLevel, type TokenUsage, type TranscriptStep } from "./types.js";
 
 interface AuditQueueMessage {
   requestId: string;
@@ -196,7 +196,7 @@ export default {
 
     const packageAuditsMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/audits$/);
     if (request.method === "GET" && packageAuditsMatch) {
-      return getPackageAudits(request, env, decodeURIComponent(packageAuditsMatch[1] ?? ""));
+      return getPackageAudits(request, env, url, decodeURIComponent(packageAuditsMatch[1] ?? ""));
     }
 
     const quickScanMatch = url.pathname.match(/^\/v1\/packages\/(.+)\/([^/]+)\/quick-scan$/);
@@ -368,13 +368,14 @@ async function getPackageVersions(request: Request, env: Env, packageName: strin
   }
 }
 
-async function getPackageAudits(request: Request, env: Env, packageName: string): Promise<Response> {
+async function getPackageAudits(request: Request, env: Env, url: URL, packageName: string): Promise<Response> {
   if (!packageName) {
     return json({ error: "packageName is required" }, 400, request, env);
   }
 
-  const audits = await readAuditHistoryForPackage(env.DB, packageName, 50);
-  return json({ packageName, audits }, 200, request, env);
+  const version = url.searchParams.get("version") ?? undefined;
+  const audits = await readAuditHistoryForPackage(env.DB, packageName, { version, limit: 50 });
+  return json({ packageName, version: version ?? null, audits }, 200, request, env);
 }
 
 // Free deterministic scan: no key, no AI. Fetches metadata, verifies + scans the
@@ -734,6 +735,7 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
     risk?: IngestRiskInput;
     usage?: { inputTokens?: number; outputTokens?: number };
     username?: string;
+    transcript?: unknown;
   } | undefined;
 
   if (!body?.packageName || !body.model || !body.risk) {
@@ -757,6 +759,7 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
     ? { inputTokens: body.usage.inputTokens, outputTokens: body.usage.outputTokens }
     : undefined;
   const username = typeof body.username === "string" && body.username.trim() ? body.username.trim().slice(0, 40) : undefined;
+  const transcript = normalizeIngestTranscript(body.transcript);
 
   try {
     const result = await runAudit({
@@ -770,13 +773,52 @@ async function ingestAudit(request: Request, env: Env): Promise<Response> {
       forceRefresh: true,
       precomputedRisk: risk,
       usage,
-      username
+      username,
+      transcript
     }, env);
 
     return json({ ingested: true, audit: result.audit }, 200, request, env);
   } catch (error) {
     return json({ error: errorMessage(error) }, 502, request, env);
   }
+}
+
+// Validate and trim an ingested transcript: known step kinds only, capped step
+// count and text lengths (mirrors the caps used by the production agents).
+function normalizeIngestTranscript(raw: unknown): TranscriptStep[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+
+  const kinds = new Set(["assistant", "tool_call", "tool_result", "verdict"]);
+  const steps: TranscriptStep[] = [];
+
+  for (const entry of raw) {
+    if (steps.length >= 120) {
+      break;
+    }
+
+    const record = entry as Record<string, unknown>;
+
+    if (typeof record?.kind !== "string" || !kinds.has(record.kind)) {
+      continue;
+    }
+
+    const text = typeof record.text === "string"
+      ? (record.text.length > 2_000 ? `${record.text.slice(0, 2_000)}… [truncated]` : record.text)
+      : undefined;
+    const tool = typeof record.tool === "string" ? record.tool.slice(0, 60) : undefined;
+    let input: unknown;
+
+    if (record.input !== undefined) {
+      const serialized = JSON.stringify(record.input) ?? "";
+      input = serialized.length > 1_000 ? { truncated: serialized.slice(0, 1_000) } : record.input;
+    }
+
+    steps.push({ kind: record.kind as TranscriptStep["kind"], tool, input, text });
+  }
+
+  return steps.length > 0 ? steps : undefined;
 }
 
 async function processAuditQueueMessage(message: AuditQueueMessage, env: Env): Promise<void> {
@@ -820,6 +862,7 @@ async function runAudit(input: {
   username?: string;
   precomputedRisk?: RiskAssessment;
   usage?: TokenUsage;
+  transcript?: TranscriptStep[];
 }, env: Env): Promise<{ cached: boolean; refreshed: boolean; audit: AuditRecord; status: number }> {
   const forceRefresh = input.forceRefresh;
 
@@ -870,7 +913,7 @@ async function runAudit(input: {
     sourceScan: workspace.summary()
   });
   const providerRisk: ProviderAuditReport = input.precomputedRisk
-    ? { risk: input.precomputedRisk, summary: input.precomputedRisk.summary ?? "", usage: input.usage ?? { inputTokens: 0, outputTokens: 0 } }
+    ? { risk: input.precomputedRisk, summary: input.precomputedRisk.summary ?? "", usage: input.usage ?? { inputTokens: 0, outputTokens: 0 }, transcript: input.transcript }
     : await runProviderAudit({
         provider: input.provider,
         model: input.model,
@@ -890,7 +933,8 @@ async function runAudit(input: {
     risk,
     auditedAt,
     requestedByUserId: input.username,
-    createdAt: auditedAt
+    createdAt: auditedAt,
+    transcript: providerRisk.transcript
   };
 
   await writeAuditRecord(env.DB, audit);

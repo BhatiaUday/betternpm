@@ -1,4 +1,4 @@
-import type { AuditIdentity, AuditProvider, AuditRecord, AuditTargetKind, Finding, PackageFacts, RiskAssessment, RiskLevel } from "./types.js";
+import type { AuditIdentity, AuditProvider, AuditRecord, AuditTargetKind, Finding, PackageFacts, RiskAssessment, RiskLevel, TranscriptStep } from "./types.js";
 
 interface AuditRecordRow {
   id: string;
@@ -15,6 +15,7 @@ interface AuditRecordRow {
   findings_json: string;
   facts_json: string;
   created_at: string;
+  transcript_json?: string | null;
 }
 
 export async function createAuditId(identity: AuditIdentity): Promise<string> {
@@ -127,37 +128,58 @@ export interface AuditHistoryEntry {
   riskLevel: RiskLevel;
   score: number;
   createdAt: string;
+  username?: string;
 }
 
-// Returns the latest audit per version for a package, newest first — the data
-// behind a package page's "audit history" timeline.
-export async function readAuditHistoryForPackage(db: D1Database, packageName: string, limit = 50): Promise<AuditHistoryEntry[]> {
-  const capped = Math.min(Math.max(limit, 1), 100);
-  const result = await db.prepare(`
-    SELECT version, audit_target, provider, model, risk_level, score, MAX(created_at) AS created_at
-    FROM audit_records
-    WHERE package_name = ?
-    GROUP BY version
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).bind(packageName, capped).all<{
-    version: string;
-    audit_target: AuditTargetKind;
-    provider: AuditProvider;
-    model: string;
-    risk_level: RiskLevel;
-    score: number;
-    created_at: string;
-  }>();
+// Returns audit history for a package. Without a version: the latest audit per
+// version, newest first (the overview timeline). With a version: every audit of
+// that exact version (different providers/models/rescans), for the per-version view.
+export async function readAuditHistoryForPackage(db: D1Database, packageName: string, options: { version?: string; limit?: number } = {}): Promise<AuditHistoryEntry[]> {
+  const capped = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const rows = options.version
+    ? await db.prepare(`
+        SELECT version, audit_target, provider, model, risk_level, score, created_at, requested_by_user_id
+        FROM audit_records
+        WHERE package_name = ? AND version = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).bind(packageName, options.version, capped).all<{
+        version: string;
+        audit_target: AuditTargetKind;
+        provider: AuditProvider;
+        model: string;
+        risk_level: RiskLevel;
+        score: number;
+        created_at: string;
+        requested_by_user_id: string | null;
+      }>()
+    : await db.prepare(`
+        SELECT version, audit_target, provider, model, risk_level, score, MAX(created_at) AS created_at, requested_by_user_id
+        FROM audit_records
+        WHERE package_name = ?
+        GROUP BY version
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).bind(packageName, capped).all<{
+        version: string;
+        audit_target: AuditTargetKind;
+        provider: AuditProvider;
+        model: string;
+        risk_level: RiskLevel;
+        score: number;
+        created_at: string;
+        requested_by_user_id: string | null;
+      }>();
 
-  return (result.results ?? []).map((row) => ({
+  return (rows.results ?? []).map((row) => ({
     version: row.version,
     target: row.audit_target,
     provider: row.provider,
     model: row.model,
     riskLevel: row.risk_level,
     score: row.score,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    username: row.requested_by_user_id ?? undefined
   }));
 }
 
@@ -177,8 +199,9 @@ export async function writeAuditRecord(db: D1Database, record: AuditRecord): Pro
       score,
       findings_json,
       facts_json,
-      created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      created_at,
+      transcript_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(audit_target, package_name, version, integrity, scanner_profile, provider, model)
     DO UPDATE SET
       requested_by_user_id = excluded.requested_by_user_id,
@@ -186,7 +209,8 @@ export async function writeAuditRecord(db: D1Database, record: AuditRecord): Pro
       score = excluded.score,
       findings_json = excluded.findings_json,
       facts_json = excluded.facts_json,
-      created_at = excluded.created_at
+      created_at = excluded.created_at,
+      transcript_json = excluded.transcript_json
   `).bind(
     record.id,
     record.identity.target,
@@ -201,7 +225,8 @@ export async function writeAuditRecord(db: D1Database, record: AuditRecord): Pro
     record.risk.score,
     JSON.stringify(record.risk),
     JSON.stringify(record.facts),
-    record.createdAt
+    record.createdAt,
+    record.transcript && record.transcript.length > 0 ? JSON.stringify(record.transcript) : null
   ).run();
 }
 
@@ -221,8 +246,22 @@ function rowToAuditRecord(row: AuditRecordRow): AuditRecord {
     risk: parseRisk(row.findings_json, row.risk_level, row.score),
     auditedAt: row.created_at,
     requestedByUserId: row.requested_by_user_id ?? undefined,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    transcript: parseTranscript(row.transcript_json)
   };
+}
+
+function parseTranscript(raw: string | null | undefined): TranscriptStep[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed as TranscriptStep[] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function parseRisk(rawJson: string, level: RiskLevel, score: number): RiskAssessment {

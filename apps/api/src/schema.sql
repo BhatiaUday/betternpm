@@ -12,8 +12,7 @@ CREATE TABLE IF NOT EXISTS audit_records (
   score INTEGER NOT NULL,
   findings_json TEXT NOT NULL,
   facts_json TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+  created_at TEXT NOT NULL  transcript_json TEXT,);
 
 CREATE UNIQUE INDEX IF NOT EXISTS audit_records_cache_key_idx
   ON audit_records (audit_target, package_name, version, integrity, scanner_profile, provider, model);

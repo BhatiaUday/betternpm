@@ -9,7 +9,8 @@ import {
   type PackageFacts,
   type ProviderAuditReport,
   type RiskLevel,
-  type TokenUsage
+  type TokenUsage,
+  type TranscriptStep
 } from "./types.js";
 import type { PackageWorkspace } from "./workspace.js";
 
@@ -70,7 +71,7 @@ export async function runProviderAudit(input: {
     ? await runAnthropicAgent(input.model, input.apiKey, system, initialUser, input.workspace, input.anthropicBaseUrl ?? DEFAULT_ANTHROPIC_BASE_URL)
     : await runResponsesAgent(input.model, input.apiKey, system, initialUser, input.workspace, input.openaiBaseUrl ?? DEFAULT_OPENAI_BASE_URL);
 
-  return normalizeReport(run.verdict, run.usage);
+  return normalizeReport(run.verdict, run.usage, run.transcript);
 }
 
 interface RawVerdict {
@@ -84,6 +85,25 @@ interface RawVerdict {
 interface AgentRun {
   verdict: RawVerdict;
   usage: TokenUsage;
+  transcript: TranscriptStep[];
+}
+
+// Transcript budget: enough to show the full reasoning trail without blowing up
+// D1 row sizes. Tool results dominate; they are truncated hardest.
+const MAX_TRANSCRIPT_STEPS = 120;
+const MAX_STEP_TEXT = 2_000;
+
+function pushStep(transcript: TranscriptStep[], step: TranscriptStep): void {
+  if (transcript.length >= MAX_TRANSCRIPT_STEPS) {
+    return;
+  }
+
+  transcript.push({
+    ...step,
+    text: typeof step.text === "string" && step.text.length > MAX_STEP_TEXT
+      ? `${step.text.slice(0, MAX_STEP_TEXT)}… [truncated]`
+      : step.text
+  });
 }
 
 const SUBMIT_SCHEMA = {
@@ -287,6 +307,7 @@ async function runAnthropicAgent(
   }));
   const messages: AnthropicMessage[] = [{ role: "user", content: initialUser }];
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  const transcript: TranscriptStep[] = [];
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     const data = await anthropicRequest(model, apiKey, system, tools, messages, baseUrl);
@@ -294,11 +315,19 @@ async function runAnthropicAgent(
     const content = Array.isArray(data.content) ? data.content : [];
     messages.push({ role: "assistant", content });
 
+    for (const block of content) {
+      if (block?.type === "text" && block.text) {
+        pushStep(transcript, { kind: "assistant", text: block.text });
+      }
+    }
+
     const toolUses = content.filter((block) => block?.type === "tool_use");
 
     if (toolUses.length === 0) {
       const text = content.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n");
-      return { verdict: parseVerdictText(text), usage };
+      const verdict = parseVerdictText(text);
+      pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+      return { verdict, usage, transcript };
     }
 
     const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
@@ -313,15 +342,15 @@ async function runAnthropicAgent(
         continue;
       }
 
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: toolUseId,
-        content: executeTool(workspace, use.name ?? "", use.input)
-      });
+      pushStep(transcript, { kind: "tool_call", tool: use.name ?? "", input: use.input });
+      const result = executeTool(workspace, use.name ?? "", use.input);
+      pushStep(transcript, { kind: "tool_result", tool: use.name ?? "", text: result });
+      toolResults.push({ type: "tool_result", tool_use_id: toolUseId, content: result });
     }
 
     if (verdict) {
-      return { verdict, usage };
+      pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+      return { verdict, usage, transcript };
     }
 
     messages.push({ role: "user", content: toolResults });
@@ -331,7 +360,9 @@ async function runAnthropicAgent(
   const data = await anthropicRequest(model, apiKey, system, undefined, messages, baseUrl);
   addAnthropicUsage(usage, data.usage);
   const text = (data.content ?? []).filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n");
-  return { verdict: parseVerdictText(text), usage };
+  const verdict = parseVerdictText(text);
+  pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+  return { verdict, usage, transcript };
 }
 
 function addAnthropicUsage(usage: TokenUsage, reported: { input_tokens?: number; output_tokens?: number } | undefined): void {
@@ -411,6 +442,7 @@ async function runResponsesAgent(
   }));
   const input: unknown[] = [{ role: "user", content: initialUser }];
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  const transcript: TranscriptStep[] = [];
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     const result = await responsesRequest(model, apiKey, system, tools, input, baseUrl);
@@ -420,10 +452,16 @@ async function runResponsesAgent(
       input.push(item);
     }
 
+    if (result.outputText) {
+      pushStep(transcript, { kind: "assistant", text: result.outputText });
+    }
+
     const functionCalls = result.output.filter((item) => item?.type === "function_call");
 
     if (functionCalls.length === 0) {
-      return { verdict: parseVerdictText(result.outputText), usage };
+      const verdict = parseVerdictText(result.outputText);
+      pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+      return { verdict, usage, transcript };
     }
 
     let verdict: RawVerdict | undefined;
@@ -438,18 +476,24 @@ async function runResponsesAgent(
         continue;
       }
 
-      input.push({ type: "function_call_output", call_id: call.call_id ?? "", output: executeTool(workspace, name, args) });
+      pushStep(transcript, { kind: "tool_call", tool: name, input: args });
+      const output = executeTool(workspace, name, args);
+      pushStep(transcript, { kind: "tool_result", tool: name, text: output });
+      input.push({ type: "function_call_output", call_id: call.call_id ?? "", output });
     }
 
     if (verdict) {
-      return { verdict, usage };
+      pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+      return { verdict, usage, transcript };
     }
   }
 
   input.push({ role: "user", content: FINAL_INSTRUCTION });
   const result = await responsesRequest(model, apiKey, system, undefined, input, baseUrl);
   addUsage(usage, result.usage);
-  return { verdict: parseVerdictText(result.outputText), usage };
+  const verdict = parseVerdictText(result.outputText);
+  pushStep(transcript, { kind: "verdict", text: JSON.stringify(verdict) });
+  return { verdict, usage, transcript };
 }
 
 function addUsage(usage: TokenUsage, reported: TokenUsage): void {
@@ -577,7 +621,7 @@ function extractJsonObject(text: string): string | undefined {
   return trimmed.slice(start, end + 1);
 }
 
-function normalizeReport(raw: RawVerdict, usage: TokenUsage): ProviderAuditReport {
+function normalizeReport(raw: RawVerdict, usage: TokenUsage, transcript?: TranscriptStep[]): ProviderAuditReport {
   const summary = typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim() : "AI audit completed.";
   const level = normalizeRiskLevel(raw.riskLevel);
   const score = typeof raw.score === "number" ? clampScore(raw.score) : defaultScoreFor(level);
@@ -593,7 +637,8 @@ function normalizeReport(raw: RawVerdict, usage: TokenUsage): ProviderAuditRepor
       summary
     },
     usage,
-    rawText: JSON.stringify(raw)
+    rawText: JSON.stringify(raw),
+    transcript
   };
 }
 

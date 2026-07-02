@@ -144,6 +144,18 @@ export interface AuditRecord {
   auditedAt: string;
   requestedByUserId?: string;
   createdAt: string;
+  transcript?: TranscriptStep[];
+}
+
+/**
+ * One step of the audit agent's conversation, stored for transparency so anyone
+ * can see how the verdict was reached. Tool results are truncated at write time.
+ */
+export interface TranscriptStep {
+  kind: "assistant" | "tool_call" | "tool_result" | "verdict";
+  tool?: string;
+  input?: unknown;
+  text?: string;
 }
 
 export interface ProviderAuditReport {
@@ -151,6 +163,7 @@ export interface ProviderAuditReport {
   summary: string;
   usage?: TokenUsage;
   rawText?: string;
+  transcript?: TranscriptStep[];
 }
 
 export interface TokenUsage {

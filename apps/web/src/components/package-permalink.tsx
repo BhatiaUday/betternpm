@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { Loader2, ShieldCheck, ArrowLeft, ChevronDown, TerminalSquare } from "lucide-react";
 import { isVersionTag, parseSlug } from "../lib/package-slug";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "https://api.betternpm.org").replace(/\/$/, "");
@@ -18,11 +18,20 @@ interface Finding {
   evidence?: Array<{ file: string; sourceUrl?: string }>;
 }
 
+interface TranscriptStep {
+  kind: "assistant" | "tool_call" | "tool_result" | "verdict";
+  tool?: string;
+  input?: unknown;
+  text?: string;
+}
+
 interface AuditRecord {
   identity: { target: string; packageName: string; version: string; provider: string; model: string };
   facts: { downloads?: { weekly?: number }; sourceScan?: { scanned: boolean; filesScanned: number } };
   risk: { level: RiskLevel; score: number; findings: Finding[]; confidence?: string; summary?: string };
   createdAt?: string;
+  requestedByUserId?: string;
+  transcript?: TranscriptStep[];
 }
 
 interface AuditHistoryEntry {
@@ -33,10 +42,12 @@ interface AuditHistoryEntry {
   riskLevel: RiskLevel;
   score: number;
   createdAt: string;
+  username?: string;
 }
 
 export function PackagePermalink() {
   const params = useParams();
+  const router = useRouter();
   const rawSlug = params.slug;
   const slug = Array.isArray(rawSlug) ? rawSlug : rawSlug ? [rawSlug] : [];
   const { name, version: requestedVersion } = parseSlug(slug);
@@ -44,7 +55,39 @@ export function PackagePermalink() {
   const [status, setStatus] = useState<"loading" | "found" | "missing" | "error">("loading");
   const [audit, setAudit] = useState<AuditRecord>();
   const [resolvedVersion, setResolvedVersion] = useState<string | undefined>(requestedVersion);
+  const [versions, setVersions] = useState<string[]>([]);
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
+
+  // All published versions, for the version dropdown.
+  useEffect(() => {
+    if (!name) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      try {
+        const response = await fetch(`${API_URL}/v1/packages/${name}/versions`);
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json() as { versions?: string[] };
+
+        if (active) {
+          setVersions(data.versions ?? []);
+        }
+      } catch {
+        // Dropdown is progressive enhancement.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [name]);
 
   useEffect(() => {
     if (!name) {
@@ -109,8 +152,9 @@ export function PackagePermalink() {
     };
   }, [name, requestedVersion]);
 
+  // Audit history for the currently resolved version (all providers/models/rescans).
   useEffect(() => {
-    if (!name) {
+    if (!name || !resolvedVersion) {
       return;
     }
 
@@ -118,7 +162,7 @@ export function PackagePermalink() {
 
     (async () => {
       try {
-        const response = await fetch(`${API_URL}/v1/packages/${name}/audits`);
+        const response = await fetch(`${API_URL}/v1/packages/${name}/audits?version=${encodeURIComponent(resolvedVersion)}`);
 
         if (!response.ok) {
           return;
@@ -137,17 +181,36 @@ export function PackagePermalink() {
     return () => {
       active = false;
     };
-  }, [name]);
+  }, [name, resolvedVersion]);
 
   return (
     <main className="audit-shell">
       <header className="audit-masthead">
         <p className="kicker">package audit</p>
         <h1 className="audit-title">{name || "Unknown package"}{resolvedVersion ? `@${resolvedVersion}` : ""}</h1>
-        <p className="audit-sub">
-          Cached audit and history for this package.{" "}
-          <a href="/search"><ArrowLeft size={13} aria-hidden="true" /> Back to search</a>
-        </p>
+        <div className="version-row">
+          {versions.length > 0 && (
+            <label className="version-picker">
+              <span>Version</span>
+              <select
+                className="select-input"
+                value={resolvedVersion && versions.includes(resolvedVersion) ? resolvedVersion : ""}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    router.push(`/p/${encodeURIComponent(name)}/${encodeURIComponent(event.target.value)}`);
+                  }
+                }}
+              >
+                <option value="" disabled>select…</option>
+                {versions.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+          )}
+          <p className="audit-sub">
+            Cached audits for this version.{" "}
+            <a href="/search"><ArrowLeft size={13} aria-hidden="true" /> Back to search</a>
+          </p>
+        </div>
       </header>
 
       {status === "loading" && (
@@ -175,13 +238,13 @@ export function PackagePermalink() {
 
       {history.length > 0 && (
         <section className="audit-history" aria-label="Audit history">
-          <h2 className="audit-history-title">Audit history</h2>
+          <h2 className="audit-history-title">Audits of v{resolvedVersion}</h2>
           <ul className="audit-history-list">
             {history.map((entry) => (
-              <li key={`${entry.version}-${entry.createdAt}`} className={resolvedVersion === entry.version ? "is-current" : undefined}>
-                <a className="ah-version" href={`/p/${encodeURIComponent(name)}/${encodeURIComponent(entry.version)}`}>v{entry.version}</a>
+              <li key={`${entry.provider}-${entry.model}-${entry.createdAt}`}>
                 <span className={`risk-badge risk-${entry.riskLevel}`}>{entry.riskLevel} {entry.score}</span>
                 <span className="ah-engine">{entry.provider} · {entry.model}</span>
+                {entry.username && <span className="ah-user">by @{entry.username}</span>}
                 <time className="ah-date" dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleDateString()}</time>
               </li>
             ))}
@@ -210,6 +273,7 @@ function AuditResult({ audit }: { audit: AuditRecord }) {
       <div className="audit-stats">
         <span><ShieldCheck size={15} aria-hidden="true" /> cached community audit</span>
         {risk.confidence && <span>confidence: {risk.confidence}</span>}
+        {audit.requestedByUserId && <span>by @{audit.requestedByUserId}</span>}
         <span>{facts.downloads?.weekly?.toLocaleString() ?? "unknown"} weekly downloads</span>
         {facts.sourceScan?.scanned && <span>{facts.sourceScan.filesScanned} files in package</span>}
         {audit.createdAt && <span>audited {new Date(audit.createdAt).toLocaleDateString()}</span>}
@@ -231,6 +295,34 @@ function AuditResult({ audit }: { audit: AuditRecord }) {
             </article>
           ))}
       </div>
+
+      {audit.transcript && audit.transcript.length > 0 && (
+        <details className="transcript-disclosure">
+          <summary>
+            <span className="disclosure-label">
+              <TerminalSquare size={15} aria-hidden="true" />
+              Agent transcript
+              <span className="disclosure-tag">{audit.transcript.length} steps</span>
+            </span>
+            <ChevronDown className="disclosure-chevron" size={16} aria-hidden="true" />
+          </summary>
+          <div className="transcript-body">
+            <p className="transcript-note">
+              The audit agent&apos;s investigation, verbatim: what it read, what it searched, and how it
+              reached the verdict. Tool results are truncated for storage.
+            </p>
+            <ol className="transcript-list">
+              {audit.transcript.map((step, index) => (
+                <li key={index} className={`ts-step ts-${step.kind}`}>
+                  <span className="ts-kind">{step.kind.replace("_", " ")}{step.tool ? ` · ${step.tool}` : ""}</span>
+                  {step.input !== undefined && <pre className="ts-pre">{JSON.stringify(step.input)}</pre>}
+                  {step.text && <pre className="ts-pre">{step.text}</pre>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
+      )}
     </div>
   );
 }
