@@ -74,7 +74,15 @@ export default function SecurityPage() {
           <li>
             The audit server independently downloads the tarball, verifies its integrity hash
             against the npm registry, and lets the model explore the real package contents with
-            read-only tools (<code>list_files</code>, <code>read_file</code>, <code>search_code</code>).
+            read-only tools: <code>list_files</code>, <code>read_file</code>, <code>search_code</code>,{" "}
+            <code>decode_strings</code> (decodes base64/hex payloads), and{" "}
+            <code>diff_previous_version</code> (compares against the previous release — where
+            malicious code usually arrives).
+          </li>
+          <li>
+            Coverage is enforced mechanically: the agent&apos;s verdict is <strong>rejected</strong>{" "}
+            until it has read every install-script file, bin entrypoint, and the main entry. The
+            full investigation transcript is stored with each audit and viewable on the package page.
           </li>
           <li>
             Verdicts are <strong>floored by deterministic facts</strong>: a package with known OSV
